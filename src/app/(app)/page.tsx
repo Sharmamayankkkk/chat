@@ -1,7 +1,10 @@
+// src/app/(app)/page.tsx
+import { redirect } from "next/navigation";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Icons } from "@/components/icons";
 
 export default function AppHome() {
+  redirect("/chat");
   return (
     <div className="flex h-full items-center justify-center bg-background">
       <Card className="w-full max-w-md text-center border-0 shadow-none">
