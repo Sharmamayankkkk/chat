@@ -3,9 +3,6 @@
 **A modern, real-time chat application designed for the conscious community.**
 
 Krishna Connect is a feature-rich communication platform built with Next.js, Supabase, and Tailwind CSS. It provides a secure and intuitive space for community members to connect, share, and grow together.
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fyour-github-username%2Fkrishna-connect&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY&project-name=krishna-connect&repository-name=krishna-connect)
-
 ---
 
 ## ✨ Key Features
@@ -107,19 +104,3 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 ---
-
-## ☁️ Deployment
-
-This project is optimized for deployment on [Vercel](https://vercel.com/).
-
-### Deploy with the Vercel Button
-
-Click the "Deploy with Vercel" button at the top of this README to automatically clone, deploy, and configure your project. You will be prompted to enter your Supabase environment variables during the setup process.
-
-### Manual Deployment
-
-1.  Push your code to a Git repository (GitHub, GitLab, Bitbucket).
-2.  Import the repository into Vercel.
-3.  Add your `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the **Environment Variables** section of your Vercel project settings.
-4.  Deploy! Vercel will automatically build and deploy your Next.js application.
-# studio
