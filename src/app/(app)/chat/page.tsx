@@ -1,6 +1,6 @@
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Icons } from "@/components/icons";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Icons } from "@/components/icons"
+import { SidebarTrigger } from "@/components/ui/sidebar"
 
 export default function ChatHomePage() {
   return (
@@ -16,12 +16,10 @@ export default function ChatHomePage() {
               <Icons.logo className="h-10 w-10" />
             </div>
             <CardTitle className="text-2xl font-bold">Welcome to Krishna Connect</CardTitle>
-            <CardDescription>
-              Select a chat from the sidebar to start messaging, or create a new one.
-            </CardDescription>
+            <CardDescription>Select a chat from the sidebar to start messaging, or create a new one.</CardDescription>
           </CardHeader>
         </Card>
       </div>
     </div>
-  );
+  )
 }
