@@ -572,29 +572,43 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         }
     };
     
-    const handleToggleStar = async (message: Message) => {
+    const handleToggleStar = async (messageToStar: Message) => {
+        const originalMessages = [...chat.messages];
+        const updatedMessages = originalMessages.map(m => 
+            m.id === messageToStar.id ? { ...m, is_starred: !m.is_starred } : m
+        );
+        setMessages(updatedMessages);
+
         const { error } = await supabase
             .from('messages')
-            .update({ is_starred: !message.is_starred })
-            .eq('id', message.id);
+            .update({ is_starred: !messageToStar.is_starred })
+            .eq('id', messageToStar.id);
         
         if (error) {
+            setMessages(originalMessages);
             toast({ variant: 'destructive', title: 'Error starring message', description: error.message });
         } else {
-            toast({ title: message.is_starred ? 'Message unstarred' : 'Message starred!' });
+            toast({ title: !messageToStar.is_starred ? 'Message starred!' : 'Message unstarred' });
         }
     };
 
-    const handleTogglePin = async (message: Message) => {
+    const handleTogglePin = async (messageToPin: Message) => {
+        const originalMessages = [...chat.messages];
+        const updatedMessages = originalMessages.map(m => 
+            m.id === messageToPin.id ? { ...m, is_pinned: !m.is_pinned } : m
+        );
+        setMessages(updatedMessages);
+
         const { error } = await supabase
             .from('messages')
-            .update({ is_pinned: !message.is_pinned })
-            .eq('id', message.id);
+            .update({ is_pinned: !messageToPin.is_pinned })
+            .eq('id', messageToPin.id);
         
         if (error) {
+            setMessages(originalMessages);
             toast({ variant: 'destructive', title: 'Error pinning message', description: error.message });
         } else {
-            toast({ title: message.is_pinned ? 'Message unpinned' : 'Message pinned!' });
+            toast({ title: !messageToPin.is_pinned ? 'Message pinned!' : 'Message unpinned' });
         }
     };
 
