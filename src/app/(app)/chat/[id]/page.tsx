@@ -1,3 +1,4 @@
+
 "use client"
 
 import { notFound, useParams, useSearchParams } from "next/navigation"
@@ -25,7 +26,7 @@ export default function ChatPage() {
   const searchParams = useSearchParams()
   const highlightMessageId = searchParams.get("highlight")
 
-  const { loggedInUser, isReady: isAppReady, resetUnreadCount, allUsers } = useAppContext()
+  const { loggedInUser, isReady: isAppReady, resetUnreadCount } = useAppContext()
   const [localChat, setLocalChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -51,7 +52,7 @@ export default function ChatPage() {
 
       const { data: messagesData, error: messagesError } = await supabase
         .from("messages")
-        .select(`*, profiles(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
+        .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
         .eq("chat_id", chatId)
         .order("created_at", { ascending: true })
 
@@ -95,37 +96,45 @@ export default function ChatPage() {
         window.removeEventListener("focus", focusListener)
       }
     }
-  }, [params.id, loggedInUser, supabase, resetUnreadCount])
+  }, [params.id, loggedInUser?.id, supabase, resetUnreadCount])
   
   const handleNewMessage = useCallback((payload: RealtimePostgresChangesPayload<Message>) => {
-    const newMessage = payload.new as Message
+    const newMessage = payload.new as Message;
     
-    const sender = allUsers.find(u => u.id === newMessage.user_id)
-    const messageWithProfile: Message = { 
-      ...newMessage, 
-      profiles: sender || { id: newMessage.user_id, name: 'Unknown User', avatar_url: '', username: 'unknown' } as User,
-    };
+    // This is a much more robust approach. Instead of trying to patch the object
+    // on the client, we fetch the complete, new message from the DB. This ensures
+    // all relations (like profiles and replied_to_message) are correctly loaded.
+    const fetchSingleMessage = async (messageId: number) => {
+        const { data, error } = await supabase
+           .from("messages")
+           .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
+           .eq("id", messageId)
+           .single();
+       
+       if (!error && data) {
+            setMessages(current => {
+               if (current.some(m => m.id === data.id)) return current;
+               return [...current, data as Message];
+           });
+       } else if (error) {
+         console.error("Error fetching single new message:", error);
+       }
+   }
+   fetchSingleMessage(newMessage.id);
 
-    setMessages((currentMessages) => {
-      if (currentMessages.some((m) => m.id === messageWithProfile.id)) {
-        return currentMessages
-      }
-      
-      if (messageWithProfile.reply_to_message_id) {
-          const repliedTo = currentMessages.find(m => m.id === messageWithProfile.reply_to_message_id);
-          if (repliedTo) {
-            messageWithProfile.replied_to_message = repliedTo;
-          }
-      }
-      return [...currentMessages, messageWithProfile]
-    })
-  }, [allUsers]);
+  }, [supabase]);
 
   const handleUpdatedMessage = useCallback((payload: RealtimePostgresChangesPayload<Message>) => {
     const updatedMessage = payload.new
     setMessages((current) =>
-      current.map((m) => (m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m)),
-    )
+      current.map((m) => {
+        if (m.id === updatedMessage.id) {
+          // Preserve the already loaded profile and reply data, and merge updates
+          return { ...m, ...updatedMessage };
+        }
+        return m;
+      })
+    );
   }, []);
 
   const handleDeletedMessage = useCallback((payload: RealtimePostgresChangesPayload<Message>) => {
