@@ -1,4 +1,3 @@
-
 "use client"
 
 import { notFound, useParams, useSearchParams } from "next/navigation"
@@ -30,14 +29,10 @@ export default function ChatPage() {
   const [localChat, setLocalChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const supabase = createClient()
   
-  const allUsersRef = useRef(allUsers)
-  useEffect(() => {
-    allUsersRef.current = allUsers
-  }, [allUsers])
-
-
+  // Use a ref to hold the supabase client instance, ensuring it's stable.
+  const supabase = useRef(createClient()).current
+  
   const fetchFullChatData = useCallback(
     async (chatId: string) => {
       setIsLoading(true)
@@ -104,48 +99,51 @@ export default function ChatPage() {
     }
   }, [params.id, loggedInUser, supabase, resetUnreadCount])
   
+  const handleNewMessage = useCallback((payload: RealtimePostgresChangesPayload<Message>) => {
+    const newMessage = payload.new as Message
+    
+    // Find sender info from the already-loaded `allUsers` list from context
+    const sender = allUsers.find(u => u.id === newMessage.user_id)
+    const messageWithProfile: Message = { 
+      ...newMessage, 
+      profiles: sender || { id: newMessage.user_id, name: 'Unknown User', avatar_url: '', username: 'unknown' } as User,
+    };
+
+    setMessages((currentMessages) => {
+      // Prevent duplicates
+      if (currentMessages.some((m) => m.id === messageWithProfile.id)) {
+        return currentMessages
+      }
+      
+      // If it's a reply, find the message it's replying to in the current state
+      if (messageWithProfile.reply_to_message_id) {
+          const repliedTo = currentMessages.find(m => m.id === messageWithProfile.reply_to_message_id);
+          if (repliedTo) {
+            messageWithProfile.replied_to_message = repliedTo;
+          }
+      }
+      return [...currentMessages, messageWithProfile]
+    })
+  }, [allUsers]);
+
+  const handleUpdatedMessage = useCallback((payload: RealtimePostgresChangesPayload<Message>) => {
+    const updatedMessage = payload.new
+    setMessages((current) =>
+      current.map((m) => (m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m)),
+    )
+  }, []);
+
+  const handleDeletedMessage = useCallback((payload: RealtimePostgresChangesPayload<Message>) => {
+    const deletedMessageId = (payload.old as Message)?.id
+    if (deletedMessageId) {
+      setMessages((current) => current.filter((m) => m.id !== deletedMessageId))
+    }
+  }, []);
+
   // Real-time subscriptions for this specific chat
   useEffect(() => {
+    // Ensure we have everything needed before subscribing
     if (!isAppReady || !supabase || !params.id) return
-
-    const handleNewMessage = (payload: RealtimePostgresChangesPayload<Message>) => {
-      const newMessage = payload.new as Message
-      const users = allUsersRef.current;
-      const sender = users.find(u => u.id === newMessage.user_id)
-
-      const messageWithProfile: Message = { 
-        ...newMessage, 
-        profiles: sender || { id: newMessage.user_id, name: 'Unknown User', avatar_url: '', username: 'unknown' } as User,
-        replied_to_message: null
-      };
-
-      setMessages((currentMessages) => {
-        if (currentMessages.some((m) => m.id === messageWithProfile.id)) {
-          return currentMessages
-        }
-        if (messageWithProfile.reply_to_message_id) {
-            const repliedTo = currentMessages.find(m => m.id === messageWithProfile.reply_to_message_id);
-            if (repliedTo) {
-                messageWithProfile.replied_to_message = repliedTo;
-            }
-        }
-        return [...currentMessages, messageWithProfile]
-      })
-    }
-
-    const handleUpdatedMessage = (payload: RealtimePostgresChangesPayload<Message>) => {
-      const updatedMessage = payload.new
-      setMessages((current) =>
-        current.map((m) => (m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m)),
-      )
-    }
-
-    const handleDeletedMessage = (payload: RealtimePostgresChangesPayload<Message>) => {
-      const deletedMessageId = (payload.old as Message)?.id
-      if (deletedMessageId) {
-        setMessages((current) => current.filter((m) => m.id !== deletedMessageId))
-      }
-    }
 
     const channel = supabase
       .channel(`chat-${params.id}`)
@@ -170,10 +168,11 @@ export default function ChatPage() {
         }
       })
     
+    // Cleanup subscription on component unmount or when chatId changes
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [params.id, supabase, isAppReady])
+  }, [params.id, supabase, isAppReady, handleNewMessage, handleUpdatedMessage, handleDeletedMessage])
 
   if ((isLoading && !localChat) || !isAppReady) {
     return <ChatPageLoading />
