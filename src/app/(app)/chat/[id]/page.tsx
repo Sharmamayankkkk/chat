@@ -26,7 +26,7 @@ export default function ChatPage() {
   const searchParams = useSearchParams()
   const highlightMessageId = searchParams.get("highlight")
 
-  const { loggedInUser, allUsers, isReady: isAppReady, resetUnreadCount } = useAppContext()
+  const { loggedInUser, isReady: isAppReady, resetUnreadCount } = useAppContext()
   const [localChat, setLocalChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -69,7 +69,7 @@ export default function ChatPage() {
   )
 
   useEffect(() => {
-    if (isAppReady && loggedInUser) {
+    if (isAppReady && loggedInUser && params.id) {
       fetchFullChatData(params.id)
     }
   }, [params.id, isAppReady, loggedInUser, fetchFullChatData])
