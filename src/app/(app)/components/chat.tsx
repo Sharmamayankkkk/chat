@@ -74,12 +74,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         themeSettings, 
         allUsers, 
         dmRequests, 
-        // These are now handled by the context provider
-        // blockedUsers, 
-        // blockUser, 
-        // unblockUser,
-        // forwardMessage,
-        // reportUser,
+        blockedUsers,
+        reportUser,
+        blockUser,
+        unblockUser,
     } = useAppContext();
     const [message, setMessage] = useState('');
     const [caption, setCaption] = useState('');
@@ -141,11 +139,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         isChannel && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin,
     [chat, loggedInUser.id, isChannel]);
 
-    // This state is managed by the AppContext now
-    // const isChatPartnerBlocked = useMemo(() => {
-    //     if (!chatPartner) return false;
-    //     return blockedUsers.includes(chatPartner.id);
-    // }, [blockedUsers, chatPartner]);
+    const isChatPartnerBlocked = useMemo(() => {
+        if (!chatPartner) return false;
+        return blockedUsers.includes(chatPartner.id);
+    }, [blockedUsers, chatPartner]);
     
     const isGroupAdmin = useMemo(() => 
         isGroup && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin, 
@@ -601,10 +598,13 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     };
 
     const handleTogglePin = async (messageToPin: Message) => {
+        if (isGroup && !isGroupAdmin) return;
+
         const originalIsPinned = messageToPin.is_pinned;
         const newIsPinned = !originalIsPinned;
 
-        setMessages(prev => prev.map(m => 
+        // Optimistic update
+        setMessages(prev => prev.map(m =>
             m.id === messageToPin.id ? { ...m, is_pinned: newIsPinned } : m
         ));
 
@@ -612,9 +612,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             .from('messages')
             .update({ is_pinned: newIsPinned })
             .eq('id', messageToPin.id);
-        
+
         if (error) {
-            setMessages(prev => prev.map(m => 
+            // Revert on error
+            setMessages(prev => prev.map(m =>
                 m.id === messageToPin.id ? { ...m, is_pinned: originalIsPinned } : m
             ));
             toast({ variant: 'destructive', title: 'Error pinning message', description: error.message });
@@ -900,18 +901,18 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
 
     const ReplyPreview = ({ repliedTo }: { repliedTo: Message }) => (
       <div
-          className="flex items-center gap-2 p-2 mb-2 rounded-md cursor-pointer border-l-2 bg-foreground/5 dark:bg-foreground/10 hover:bg-foreground/10 dark:hover:bg-foreground/20 transition-colors"
-          style={{ borderColor: themeSettings.usernameColor }}
-          onClick={() => jumpToMessage(repliedTo.id)}
+        className="flex items-center gap-2 p-2 mb-2 rounded-md cursor-pointer border-l-2 bg-foreground/[.07] dark:bg-foreground/[.1] hover:bg-foreground/[.1] dark:hover:bg-foreground/[.15] transition-colors"
+        style={{ borderColor: themeSettings.usernameColor }}
+        onClick={() => jumpToMessage(repliedTo.id)}
       >
-          <div className="flex-1 overflow-hidden">
-              <p className="font-semibold text-sm truncate" style={{ color: themeSettings.usernameColor }}>
-                  {repliedTo.profiles.name}
-              </p>
-              <p className="text-xs truncate opacity-80" style={{ color: 'inherit', opacity: 0.8 }}>
-                  {repliedTo.content || (repliedTo.attachment_metadata?.name || 'Attachment')}
-              </p>
-          </div>
+        <div className="flex-1 overflow-hidden">
+          <p className="font-semibold text-sm truncate" style={{ color: themeSettings.usernameColor }}>
+            {repliedTo.profiles.name}
+          </p>
+          <p className="text-xs truncate opacity-80" style={{ color: 'inherit', opacity: 0.8 }}>
+            {repliedTo.content || (repliedTo.attachment_metadata?.name || 'Attachment')}
+          </p>
+        </div>
       </div>
   );
     
@@ -1164,10 +1165,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                     <DropdownMenuItem asChild><Link href={isGroup ? `/group/${chat.id}` : `/profile/${chatPartner?.username || ''}`}>View Info</Link></DropdownMenuItem>
-                    {chatPartner && <DropdownMenuItem onClick={() => { /* reportUser functionality comes from context */ }}>Report User</DropdownMenuItem>}
+                    {chatPartner && <DropdownMenuItem onClick={() => reportUser(chatPartner.id, 'No reason specified')}>Report User</DropdownMenuItem>}
                     {chatPartner && (
-                      <DropdownMenuItem onClick={() => { /* block/unblock logic comes from context */ }}>
-                        Block User
+                      <DropdownMenuItem onClick={() => isChatPartnerBlocked ? unblockUser(chatPartner.id) : blockUser(chatPartner.id)}>
+                        {isChatPartnerBlocked ? 'Unblock User' : 'Block User'}
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator />
@@ -1182,8 +1183,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         <ScrollArea viewportRef={scrollAreaRef} className="absolute inset-0 h-full w-full">
             <div className="p-4 space-y-6">
             {chat.messages
-            // Filter logic will be handled by context or another layer
-            // .filter(message => !blockedUsers.includes(message.user_id))
+            .filter(message => !blockedUsers.includes(message.user_id))
             .map((message) => <MessageBubble key={message.id} message={message} />)}
             <div ref={messagesEndRef} />
             </div>
@@ -1198,13 +1198,13 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                     Only admins can send messages in this channel.
                 </AlertDescription>
             </Alert>
-        ) : false /* isChatPartnerBlocked is now from context */ ? (
+        ) : isChatPartnerBlocked ? (
            <Alert variant="destructive">
             <UserX className="h-4 w-4" />
             <AlertTitle>User Blocked</AlertTitle>
             <AlertDescription className="flex items-center justify-between gap-4">
               <span>You can't send messages to a user you have blocked.</span>
-              <Button variant="outline" size="sm" onClick={() => chatPartner /*&& unblockUser(chatPartner.id)*/}>Unblock</Button>
+              <Button variant="outline" size="sm" onClick={() => chatPartner && unblockUser(chatPartner.id)}>Unblock</Button>
             </AlertDescription>
           </Alert>
         ) : isDmRestricted ? (
