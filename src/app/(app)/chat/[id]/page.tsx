@@ -5,7 +5,7 @@ import { notFound, useParams, useSearchParams } from "next/navigation"
 import { Chat as ChatUI } from "../../components/chat"
 import { useAppContext } from "@/providers/app-provider"
 import { Icons } from "@/components/icons"
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { createClient } from "@/lib/utils"
 import type { Chat, Message } from "@/lib/types"
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js"
@@ -26,12 +26,12 @@ export default function ChatPage() {
   const searchParams = useSearchParams()
   const highlightMessageId = searchParams.get("highlight")
 
-  const { loggedInUser, allUsers, isReady: isAppReady, resetUnreadCount } = useAppContext()
+  const { loggedInUser, isReady: isAppReady, resetUnreadCount } = useAppContext()
   const [localChat, setLocalChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [isInitialLoading, setIsInitialLoading] = useState(true)
 
-  const supabase = useRef(createClient()).current
+  const supabase = createClient()
 
   const fetchFullChatData = useCallback(
     async (chatId: string) => {
@@ -93,36 +93,28 @@ export default function ChatPage() {
 
   const handleNewMessage = useCallback(
     (payload: RealtimePostgresChangesPayload<Message>) => {
-      const newMessage = payload.new as Message
-      const senderProfile = allUsers.find((u) => u.id === newMessage.user_id)
+      const newMessageStub = payload.new
 
-      if (!senderProfile) {
-        // Fallback if we don't know the sender (e.g., they just joined a group)
-        fetchFullChatData(params.id)
-        return
-      }
-      
-      // Add message instantly with sender info to prevent avatar blinking.
-      // `replied_to_message` will be missing for now.
-      const optimisticMessage: Message = { ...newMessage, profiles: senderProfile }
-      setMessages((current) => (current.some((m) => m.id === optimisticMessage.id) ? current : [...current, optimisticMessage]))
-
-      // If it's a reply, we need the replied_to_message data.
-      // We fetch it and replace the optimistic message with the full one.
-      if (newMessage.reply_to_message_id) {
-        supabase
-          .from("messages")
-          .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
-          .eq("id", newMessage.id)
-          .single()
-          .then(({ data: fullMessageData, error }) => {
-            if (fullMessageData && !error) {
-              setMessages((current) => current.map((m) => (m.id === fullMessageData.id ? (fullMessageData as Message) : m)))
-            }
-          })
-      }
+      // Perform a single, reliable fetch for the complete message data.
+      // This ensures all joined data (profiles, replies) is present, preventing UI flicker.
+      supabase
+        .from("messages")
+        .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
+        .eq("id", newMessageStub.id)
+        .single()
+        .then(({ data: fullMessageData, error }) => {
+          if (error) {
+            console.error("Error fetching full new message:", error)
+            return
+          }
+          if (fullMessageData) {
+            setMessages((current) =>
+              current.some((m) => m.id === fullMessageData.id) ? current : [...current, fullMessageData as Message],
+            )
+          }
+        })
     },
-    [allUsers, supabase, params.id, fetchFullChatData],
+    [supabase],
   )
 
   const handleUpdatedMessage = useCallback(
