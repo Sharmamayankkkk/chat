@@ -191,6 +191,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     }, [dmRequests, loggedInUser, chatPartner]);
 
     const jumpToMessage = (messageId: number) => {
+        setIsPinnedDialogOpen(false);
         const messageElement = document.getElementById(`message-${messageId}`);
         if (messageElement) {
             messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1141,7 +1142,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             </div>
         </div>
         <div className="flex items-center gap-1">
-            {isGroup && pinnedMessages.length > 0 && (
+            {pinnedMessages.length > 0 && (
                 <TooltipProvider>
                     <Tooltip>
                         <TooltipTrigger asChild>
