@@ -64,30 +64,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     wallpaperBrightness: 100,
   })
   const [isReady, setIsReady] = useState(false)
-  const [isInitializing, setIsInitializing] = useState(false)
+  const isInitializingRef = useRef(false)
 
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
   const { toast } = useToast()
   const router = useRouter()
   const pathname = usePathname()
-
-  const initialSessionProcessed = useRef(false)
   const subscriptionsRef = useRef<any[]>([])
-
-  useEffect(() => {
-    const requestNotificationPermission = async () => {
-      if ("Notification" in window && Notification.permission === "default") {
-        await Notification.requestPermission()
-      }
-    }
-    requestNotificationPermission()
-  }, [])
 
   const fetchInitialData = useCallback(
     async (session: Session) => {
-      if (isInitializing) return
-      setIsInitializing(true)
+      if (isInitializingRef.current) return
+      isInitializingRef.current = true
       try {
         const { user } = session
         const [
@@ -146,132 +135,145 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch (error: any) {
         console.error("Error in fetchInitialData:", error)
         toast({ variant: "destructive", title: "Error loading data", description: error.message })
+        setLoggedInUser(null);
+        setChats([]);
+        setAllUsers([]);
+        setDmRequests([]);
+        setBlockedUsers([]);
+        setEvents([]);
       } finally {
-        setIsInitializing(false)
+        isInitializingRef.current = false
       }
     },
-    [isInitializing, supabase, toast],
+    [supabase, toast],
   )
-
+  
+  // Initialization and Auth State Change Handler
   useEffect(() => {
+    let mounted = true;
+
+    // Load theme settings from localStorage
     try {
-      const savedSettings = localStorage.getItem("themeSettings")
-      if (savedSettings) setThemeSettingsState(JSON.parse(savedSettings))
+      const savedSettings = localStorage.getItem("themeSettings");
+      if (savedSettings) setThemeSettingsState(JSON.parse(savedSettings));
     } catch (error) {
-      console.error("Could not load theme settings:", error)
+      console.error("Could not load theme settings:", error);
     }
-  }, [])
 
-  useEffect(() => {
-    let mounted = true
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return
-      if (event === "SIGNED_IN" && session?.user.id === loggedInUser?.id && initialSessionProcessed.current) {
-        return
-      }
-      setSession(session)
-      try {
-        if (session && event !== "TOKEN_REFRESHED") {
-          await fetchInitialData(session)
-          initialSessionProcessed.current = true
-        } else if (!session) {
-          setLoggedInUser(null)
-          setChats([])
-          setAllUsers([])
-          setDmRequests([])
-          setBlockedUsers([])
-          setEvents([])
-          initialSessionProcessed.current = false
+      if (!mounted) return;
+      setSession(session);
+      
+      if (session) {
+        // Only fetch data on initial session or when user explicitly signs in.
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+          await fetchInitialData(session);
         }
-      } catch (error: any) {
-        console.error("Error in auth state change:", error)
-        if (mounted) {
-          toast({ variant: "destructive", title: "Authentication Error", description: error.message })
-          setLoggedInUser(null)
-        }
-      } finally {
-        if (mounted && !isReady) setIsReady(true)
+      } else {
+        // User is signed out. Clear all data.
+        setLoggedInUser(null);
+        setChats([]);
+        setAllUsers([]);
+        setDmRequests([]);
+        setBlockedUsers([]);
+        setEvents([]);
       }
-    })
-    return () => {
-      mounted = false
-      subscription.unsubscribe()
-    }
-  }, [supabase.auth, fetchInitialData, toast, isReady, loggedInUser?.id])
 
-  useEffect(() => {
-    return () => {
-      subscriptionsRef.current.forEach((channel) => supabase.removeChannel(channel))
-      subscriptionsRef.current = []
-    }
-  }, [supabase])
+      // Mark the app as "ready" to be displayed after the first auth event is processed.
+      if (mounted) {
+        setIsReady(true);
+      }
+    });
 
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [fetchInitialData, supabase.auth]); // Stable dependencies
+
+
+  // Realtime subscriptions
   useEffect(() => {
-    if (!loggedInUser || !isReady) return
+    if (!loggedInUser || !isReady) {
+      // Clean up all subscriptions if user logs out or app isn't ready
+      subscriptionsRef.current.forEach((sub) => supabase.removeChannel(sub));
+      subscriptionsRef.current = [];
+      return;
+    }
+  
+    // At this point, we know we have a logged-in user.
+    // We setup or reset subscriptions.
+    subscriptionsRef.current.forEach((sub) => supabase.removeChannel(sub));
+    subscriptionsRef.current = [];
+  
     const handleDmRequestChange = async () => {
       const { data, error } = await supabase
         .from("dm_requests")
         .select("*, from:profiles!from_user_id(*), to:profiles!to_user_id(*)")
-        .or(`from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id}`)
-      if (error) console.error("Error re-fetching DM requests:", error)
-      else setDmRequests(data as DmRequest[])
-    }
+        .or(`from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id}`);
+      if (error) console.error("Error re-fetching DM requests:", error);
+      else setDmRequests(data as DmRequest[]);
+    };
+  
     const handleBlockedUsersChange = (payload: RealtimePostgresChangesPayload<{ blocked_id: string }>) => {
-      if (payload.eventType === "INSERT") setBlockedUsers((current) => [...current, payload.new.blocked_id])
-      else if (payload.eventType === "DELETE") setBlockedUsers((current) => current.filter((id) => id !== (payload.old as any).blocked_id))
-    }
+      if (payload.eventType === "INSERT") setBlockedUsers((current) => [...current, payload.new.blocked_id]);
+      else if (payload.eventType === "DELETE")
+        setBlockedUsers((current) => current.filter((id) => id !== (payload.old as any).blocked_id));
+    };
+  
     const handleEventChange = (payload: RealtimePostgresChangesPayload<Event>) => {
       setEvents((current) => {
         if (payload.eventType === "INSERT") {
-          const newEvent = payload.new as Event
-          if (!newEvent.profiles) newEvent.profiles = allUsers.find((u) => u.id === newEvent.creator_id)
-          return [...current, newEvent]
+          const newEvent = { ...payload.new, profiles: allUsers.find((u) => u.id === payload.new.creator_id) } as Event;
+          return [...current, newEvent];
         }
-        if (payload.eventType === "UPDATE") return current.map((e) => (e.id === payload.new.id ? { ...e, ...payload.new } : e))
-        if (payload.eventType === "DELETE") return current.filter((e) => e.id !== (payload.old as any).id)
-        return current
-      })
-    }
+        if (payload.eventType === "UPDATE") return current.map((e) => (e.id === payload.new.id ? { ...e, ...payload.new } : e));
+        if (payload.eventType === "DELETE") return current.filter((e) => e.id !== (payload.old as any).id);
+        return current;
+      });
+    };
+  
     const handleRsvpChange = (payload: RealtimePostgresChangesPayload<any>) => {
-      const rsvp = payload.new
+      const rsvp = payload.new;
       setEvents((currentEvents) =>
         currentEvents.map((e) => {
           if (e.id === rsvp.event_id) {
-            const existingRsvpIndex = e.rsvps.findIndex((r) => r.user_id === rsvp.user_id)
-            const newRsvps = [...e.rsvps]
-            if (existingRsvpIndex > -1) newRsvps[existingRsvpIndex] = { event_id: rsvp.event_id, user_id: rsvp.user_id, status: rsvp.status }
-            else newRsvps.push({ event_id: rsvp.event_id, user_id: rsvp.user_id, status: rsvp.status })
-            return { ...e, rsvps: newRsvps }
+            const newRsvps = e.rsvps.filter(r => r.user_id !== rsvp.user_id);
+            newRsvps.push({ event_id: rsvp.event_id, user_id: rsvp.user_id, status: rsvp.status });
+            return { ...e, rsvps: newRsvps };
           }
-          return e
+          return e;
         }),
-      )
-    }
-    const dmRequestChannel = supabase.channel(`dm-requests-${loggedInUser.id}`).on("postgres_changes", { event: "*", schema: "public", table: "dm_requests", filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, handleDmRequestChange).subscribe()
-    const blockedUsersChannel = supabase.channel(`blocked-users-${loggedInUser.id}`).on("postgres_changes", { event: "*", schema: "public", table: "blocked_users", filter: `blocker_id=eq.${loggedInUser.id}` }, handleBlockedUsersChange as any).subscribe()
-    const eventsChannel = supabase.channel(`events-${loggedInUser.id}`).on("postgres_changes", { event: "*", schema: "public", table: "events" }, handleEventChange as any).subscribe()
-    const rsvpChannel = supabase.channel(`rsvp-${loggedInUser.id}`).on("postgres_changes", { event: "*", schema: "public", table: "event_rsvps" }, handleRsvpChange as any).subscribe()
-    subscriptionsRef.current = [dmRequestChannel, blockedUsersChannel, eventsChannel, rsvpChannel]
-    return () => subscriptionsRef.current.forEach((channel) => supabase.removeChannel(channel))
-  }, [loggedInUser, isReady, supabase, allUsers])
+      );
+    };
+  
+    const dmRequestChannel = supabase.channel(`dm-requests-${loggedInUser.id}`).on("postgres_changes", { event: "*", schema: "public", table: "dm_requests", filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, handleDmRequestChange).subscribe();
+    const blockedUsersChannel = supabase.channel(`blocked-users-${loggedInUser.id}`).on("postgres_changes", { event: "*", schema: "public", table: "blocked_users", filter: `blocker_id=eq.${loggedInUser.id}` }, handleBlockedUsersChange as any).subscribe();
+    const eventsChannel = supabase.channel(`events`).on("postgres_changes", { event: "*", schema: "public", table: "events" }, handleEventChange as any).subscribe();
+    const rsvpChannel = supabase.channel(`rsvp`).on("postgres_changes", { event: "*", schema: "public", table: "event_rsvps" }, handleRsvpChange as any).subscribe();
+  
+    subscriptionsRef.current = [dmRequestChannel, blockedUsersChannel, eventsChannel, rsvpChannel];
+  
+    return () => {
+      subscriptionsRef.current.forEach((sub) => supabase.removeChannel(sub));
+      subscriptionsRef.current = [];
+    };
+  }, [loggedInUser, isReady, supabase, allUsers]);
 
-  const chatIdsString = useMemo(() => chats.map((c) => c.id).sort().join(","), [chats])
-
+  const chatIdsString = useMemo(() => chats.map((c) => c.id).sort().join(","), [chats]);
+  
   useEffect(() => {
-    if (!isReady || !loggedInUser || !chatIdsString) return
+    if (!isReady || !loggedInUser || !chatIdsString) return;
 
     const handleNewMessage = (payload: RealtimePostgresChangesPayload<Message>) => {
-      const newMessage = payload.new as Message
-      const currentChatId = pathname.split("/chat/")[1]
-      const isChatOpen = String(newMessage.chat_id) === currentChatId
-      
-      // *** THE FIX: If chat is open, do nothing. The chat page will handle it. ***
-      if (isChatOpen) {
-        return;
-      }
+        const newMessage = payload.new as Message
+        if (newMessage.user_id === loggedInUser.id) return
 
-      // --- Logic for INACTIVE chats and notifications ---
-      if (newMessage.user_id !== loggedInUser.id) {
+        const currentChatId = pathname.split("/chat/")[1]
+        const isChatOpen = String(newMessage.chat_id) === currentChatId
+
+        if (isChatOpen) return;
+
         setChats((currentChats) =>
           currentChats.map((c) => {
             if (c.id === newMessage.chat_id) {
@@ -281,25 +283,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
             return c
           }),
         )
-      }
 
-      const isWindowFocused = document.hasFocus()
-      if (!isWindowFocused && Notification.permission === "granted" && newMessage.user_id !== loggedInUser.id) {
-        const sender = allUsers.find((u) => u.id === newMessage.user_id)
-        if (sender && !blockedUsers.includes(sender.id)) {
-          const notification = new Notification(sender.name || "New Message", {
-            body: newMessage.content || "Sent an attachment",
-            icon: sender.avatar_url || "/logo/light_KCS.png",
-            tag: `chat-${newMessage.chat_id}`,
-          })
-          notification.onclick = () => {
-            window.focus()
-            router.push(`/chat/${newMessage.chat_id}`)
-            notification.close()
+        const isWindowFocused = document.hasFocus()
+        if (!isWindowFocused && Notification.permission === "granted" && !blockedUsers.includes(newMessage.user_id)) {
+          const sender = allUsers.find((u) => u.id === newMessage.user_id)
+          if (sender) {
+            const notification = new Notification(sender.name || "New Message", {
+              body: newMessage.content || "Sent an attachment",
+              icon: sender.avatar_url || "/logo/light_KCS.png",
+              tag: `chat-${newMessage.chat_id}`,
+            })
+            notification.onclick = () => {
+              window.focus()
+              router.push(`/chat/${newMessage.chat_id}`)
+              notification.close()
+            }
           }
         }
       }
-    }
 
     const handleChatUpdate = (payload: any) => setChats((current) => current.map((c) => (c.id === payload.new.id ? { ...c, ...payload.new } : c)))
     const handleChatDelete = (payload: any) => setChats((current) => current.filter((c) => c.id !== payload.old.id))
@@ -308,10 +309,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const chatsChannel = supabase.channel(`chats-provider-${loggedInUser.id}`).on("postgres_changes", { event: "UPDATE", schema: "public", table: "chats", filter: `id=in.(${chatIdsString})` }, handleChatUpdate).on("postgres_changes", { event: "DELETE", schema: "public", table: "chats", filter: `id=in.(${chatIdsString})` }, handleChatDelete).subscribe()
 
     return () => {
-      supabase.removeChannel(messageChannel)
-      supabase.removeChannel(chatsChannel)
-    }
-  }, [isReady, loggedInUser, chatIdsString, supabase, pathname, allUsers, blockedUsers, router])
+      supabase.removeChannel(messageChannel);
+      supabase.removeChannel(chatsChannel);
+    };
+  }, [isReady, loggedInUser, chatIdsString, supabase, pathname, allUsers, blockedUsers, router]);
+
 
   const setThemeSettings = useCallback((newSettings: Partial<ThemeSettings>) => {
     setThemeSettingsState((prev) => {
