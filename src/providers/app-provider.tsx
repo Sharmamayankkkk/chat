@@ -1,3 +1,4 @@
+
 "use client"
 
 import { createContext, useContext, useState, type ReactNode, useEffect, useCallback, useMemo, useRef } from "react"
@@ -220,7 +221,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const currentChatId = currentPath?.split("/chat/")[1];
       const isChatOpen = String(newMessage.chat_id) === currentChatId;
 
-      // *** This is the key change: Provider ignores messages for the open chat. ***
+      // This is the key change: Provider ignores messages for the open chat.
       if (isChatOpen) return;
 
       setChats((currentChats) =>
@@ -289,7 +290,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .subscribe();
     }
     
-    // --- Other subscriptions ---
     const handleGenericUpdate = (setter: React.Dispatch<React.SetStateAction<any[]>>, payload: any) => {
         setter(current => {
             const oldId = payload.old?.id;
@@ -308,24 +308,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const blockedUsersChannel = supabase.channel(`blocked-users-${loggedInUser.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, 
-      (p: any) => handleGenericUpdate(setBlockedUsers, p))
+      (p: any) => {
+        if (p.eventType === 'INSERT') {
+            setBlockedUsers(current => [...current, p.new.blocked_id]);
+        } else if (p.eventType === 'DELETE') {
+            setBlockedUsers(current => current.filter(id => id !== p.old.blocked_id));
+        }
+      })
       .subscribe();
 
     const eventsChannel = supabase.channel(`events-global`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, 
-      (p: any) => handleGenericUpdate(setEvents, p))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, async () => {
+         const { data: eventsData } = await supabase.from("events").select("*, profiles:creator_id(*), rsvps:event_rsvps(*)");
+         setEvents(eventsData || []);
+      })
       .subscribe();
       
     const rsvpChannel = supabase.channel(`rsvps-global`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_rsvps' }, (payload: any) => {
-          setEvents(currentEvents => currentEvents.map(e => {
-              if (e.id === payload.new.event_id) {
-                  const newRsvps = e.rsvps.filter(r => r.user_id !== payload.new.user_id);
-                  newRsvps.push(payload.new);
-                  return {...e, rsvps: newRsvps};
-              }
-              return e;
-          }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_rsvps' }, async () => {
+          const { data: eventsData } = await supabase.from("events").select("*, profiles:creator_id(*), rsvps:event_rsvps(*)");
+          setEvents(eventsData || []);
       })
       .subscribe();
 
