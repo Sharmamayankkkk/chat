@@ -1,3 +1,4 @@
+
 import { createServerClient, type CookieOptions } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
@@ -57,36 +58,39 @@ export async function middleware(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
+  const { pathname } = request.nextUrl
 
-  // Auth routes - redirect to app if already logged in
-  if (
-    request.nextUrl.pathname.startsWith("/login") ||
-    request.nextUrl.pathname.startsWith("/signup") ||
-    request.nextUrl.pathname.startsWith("/forgot-password")
-  ) {
-    if (user) {
-      return NextResponse.redirect(new URL("/chat", request.url))
-    }
+  // Define routes that are accessible to everyone, even without a login.
+  const publicRoutes = [
+    "/login",
+    "/signup",
+    "/forgot-password",
+    "/update-password",
+  ]
+  
+  // Check if the current route is one of the public routes.
+  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
+
+  // Define auth routes where a logged-in user should be redirected away.
+  const authRoutes = ["/login", "/signup", "/forgot-password"]
+  const isAuthRoute = authRoutes.some(route => pathname.startsWith(route))
+
+  // If a user is logged in, redirect them away from login, signup, etc.
+  if (user && isAuthRoute) {
+    return NextResponse.redirect(new URL("/chat", request.url))
   }
-
-  // Protected app routes - redirect to login if not authenticated
-  if (
-    request.nextUrl.pathname.startsWith("/chat") ||
-    request.nextUrl.pathname.startsWith("/events") ||
-    request.nextUrl.pathname.startsWith("/profile") ||
-    request.nextUrl.pathname.startsWith("/settings") ||
-    request.nextUrl.pathname.startsWith("/group") ||
-    request.nextUrl.pathname.startsWith("/starred") ||
-    request.nextUrl.pathname.startsWith("/explore") ||
-    request.nextUrl.pathname.startsWith("/admin")
-  ) {
-    if (!user) {
+  
+  // If a user is not logged in and is trying to access a protected route, redirect to login.
+  // A route is considered protected if it's NOT in our public list.
+  if (!user && !isPublicRoute) {
+    // The root path has its own logic below, so we exclude it here.
+    if (pathname !== "/") {
       return NextResponse.redirect(new URL("/login", request.url))
     }
   }
 
-  // Root path handling
-  if (request.nextUrl.pathname === "/") {
+  // Handle the root path ("/") separately.
+  if (pathname === "/") {
     if (user) {
       return NextResponse.redirect(new URL("/chat", request.url))
     } else {
