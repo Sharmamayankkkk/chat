@@ -165,22 +165,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSession(session);
       
       if (session) {
-        // Only fetch data on initial session or when user explicitly signs in.
-        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
           await fetchInitialData(session);
         }
       } else {
-        // User is signed out. Clear all data and redirect.
+        // User is signed out. Clear all data.
+        // The redirect is handled by middleware or page/layout logic.
         setLoggedInUser(null);
         setChats([]);
         setAllUsers([]);
         setDmRequests([]);
         setBlockedUsers([]);
         setEvents([]);
-        router.push('/login');
       }
-
-      // Mark the app as "ready" to be displayed after the first auth event is processed.
+      
       if (mounted) {
         setIsReady(true);
       }
@@ -190,7 +188,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [fetchInitialData, supabase.auth, router]);
+  }, []); // <-- Removed dependencies to ensure this runs only once.
 
 
   // Realtime subscriptions

@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useEffect } from "react"
@@ -8,20 +9,20 @@ import { useAppContext } from "@/providers/app-provider"
 
 export default function AppHome() {
   const router = useRouter()
-  const { user, isReady } = useAppContext()
+  const { loggedInUser, isReady } = useAppContext()
 
   useEffect(() => {
     // Only redirect after the app context is ready
     if (isReady) {
       // If user is authenticated, redirect to chat
-      if (user) {
+      if (loggedInUser) {
         router.replace("/chat")
       } else {
         // If not authenticated, redirect to login
         router.replace("/login")
       }
     }
-  }, [user, isReady, router])
+  }, [loggedInUser, isReady, router])
 
   // Show loading state while checking auth
   if (!isReady) {
