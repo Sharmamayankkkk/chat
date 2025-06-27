@@ -7,7 +7,7 @@ import { useAppContext } from "@/providers/app-provider"
 import { Icons } from "@/components/icons"
 import { useEffect, useState, useCallback, useRef } from "react"
 import { createClient } from "@/lib/utils"
-import type { Chat, Message } from "@/lib/types"
+import type { Chat, Message, User } from "@/lib/types"
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js"
 
 function ChatPageLoading() {
@@ -31,7 +31,11 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const supabase = createClient()
-  const channelRef = useRef<any>(null);
+  
+  const allUsersRef = useRef(allUsers)
+  useEffect(() => {
+    allUsersRef.current = allUsers
+  }, [allUsers])
 
 
   const fetchFullChatData = useCallback(
@@ -100,24 +104,24 @@ export default function ChatPage() {
     }
   }, [params.id, loggedInUser, supabase, resetUnreadCount])
   
-  // Real-time subscriptions
+  // Real-time subscriptions for this specific chat
   useEffect(() => {
-    if (!isAppReady || !supabase || !params.id || channelRef.current) return
+    if (!isAppReady || !supabase || !params.id) return
 
     const handleNewMessage = (payload: RealtimePostgresChangesPayload<Message>) => {
-      const newMessage = payload.new as Message;
-      const sender = allUsers.find(u => u.id === newMessage.user_id);
+      const newMessage = payload.new as Message
+      const users = allUsersRef.current;
+      const sender = users.find(u => u.id === newMessage.user_id)
 
-      if (!sender) {
-        console.warn("Sender not found for new message:", newMessage.user_id);
-        return;
-      }
-      
-      const messageWithProfile: Message = { ...newMessage, profiles: sender, replied_to_message: null };
+      const messageWithProfile: Message = { 
+        ...newMessage, 
+        profiles: sender || { id: newMessage.user_id, name: 'Unknown User', avatar_url: '', username: 'unknown' } as User,
+        replied_to_message: null
+      };
 
       setMessages((currentMessages) => {
         if (currentMessages.some((m) => m.id === messageWithProfile.id)) {
-          return currentMessages;
+          return currentMessages
         }
         if (messageWithProfile.reply_to_message_id) {
             const repliedTo = currentMessages.find(m => m.id === messageWithProfile.reply_to_message_id);
@@ -125,24 +129,23 @@ export default function ChatPage() {
                 messageWithProfile.replied_to_message = repliedTo;
             }
         }
-        return [...currentMessages, messageWithProfile];
-      });
-    };
+        return [...currentMessages, messageWithProfile]
+      })
+    }
 
     const handleUpdatedMessage = (payload: RealtimePostgresChangesPayload<Message>) => {
-      const updatedMessage = payload.new;
+      const updatedMessage = payload.new
       setMessages((current) =>
         current.map((m) => (m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m)),
       )
-    };
+    }
 
     const handleDeletedMessage = (payload: RealtimePostgresChangesPayload<Message>) => {
       const deletedMessageId = (payload.old as Message)?.id
       if (deletedMessageId) {
         setMessages((current) => current.filter((m) => m.id !== deletedMessageId))
       }
-    };
-
+    }
 
     const channel = supabase
       .channel(`chat-${params.id}`)
@@ -167,15 +170,10 @@ export default function ChatPage() {
         }
       })
     
-    channelRef.current = channel;
-
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
+      supabase.removeChannel(channel)
     }
-  }, [params.id, supabase, isAppReady, allUsers])
+  }, [params.id, supabase, isAppReady])
 
   if ((isLoading && !localChat) || !isAppReady) {
     return <ChatPageLoading />
