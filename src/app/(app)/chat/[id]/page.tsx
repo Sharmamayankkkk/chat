@@ -115,22 +115,20 @@ export default function ChatPage() {
   )
 
   const handleUpdatedMessage = useCallback(
-    async (payload: RealtimePostgresChangesPayload<Message>) => {
-      try {
-        const { data, error } = await supabase
-          .from("messages")
-          .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
-          .eq("id", payload.new.id)
-          .single()
-        if (error) throw error
-        if (data) {
-          setMessages((current) => current.map((m) => (m.id === data.id ? (data as Message) : m)))
-        }
-      } catch (error) {
-        console.error("Error fetching updated message in real-time:", error)
-      }
+    (payload: RealtimePostgresChangesPayload<Message>) => {
+      setMessages((current) =>
+        current.map((m) => {
+          if (m.id === payload.new.id) {
+            // Merge the new data with the existing message.
+            // This preserves the `profiles` and `replied_to_message` objects,
+            // which are not included in the real-time UPDATE payload.
+            return { ...m, ...payload.new }
+          }
+          return m
+        }),
+      )
     },
-    [supabase],
+    [], // No dependencies needed, it's a pure state update
   )
 
   const handleDeletedMessage = useCallback((payload: RealtimePostgresChangesPayload<{ id: number }>) => {
