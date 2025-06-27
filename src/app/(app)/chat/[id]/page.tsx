@@ -22,14 +22,14 @@ function ChatPageLoading() {
 }
 
 export default function ChatPage() {
-  const params = useParams<{ id:string }>()
+  const params = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const highlightMessageId = searchParams.get("highlight")
 
   const { loggedInUser, isReady: isAppReady, resetUnreadCount } = useAppContext()
   const [localChat, setLocalChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [isInitialLoading, setIsInitialLoading] = useState(true)
 
   const supabase = useRef(createClient()).current
 
@@ -66,13 +66,18 @@ export default function ChatPage() {
   
   // This effect handles the INITIAL loading state. It only runs when the chat ID changes.
   useEffect(() => {
-    if (isAppReady && loggedInUser && params.id) {
-      setIsLoading(true)
+    // When the chat ID changes, we are definitely doing an initial load.
+    setIsInitialLoading(true)
+    setLocalChat(null) // Clear old chat data
+    setMessages([]) // Clear old messages
+
+    if (isAppReady && loggedInUser) {
       fetchFullChatData(params.id).finally(() => {
-        setIsLoading(false)
+        setIsInitialLoading(false)
       })
     }
-  }, [params.id, isAppReady, loggedInUser, fetchFullChatData])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.id, isAppReady, loggedInUser?.id]) // Depends on ID to re-trigger for new chats
 
   useEffect(() => {
     if (supabase && params.id && loggedInUser?.id) {
@@ -159,7 +164,7 @@ export default function ChatPage() {
     }
   }, [params.id, supabase, isAppReady, handleNewMessage, handleUpdatedMessage, handleDeletedMessage])
 
-  if (isLoading || !isAppReady) {
+  if (isInitialLoading || !isAppReady) {
     return <ChatPageLoading />
   }
 
