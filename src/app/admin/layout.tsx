@@ -40,8 +40,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push('/login');
-    router.refresh(); 
   };
 
   if (!isReady || !loggedInUser || !loggedInUser.is_admin) {

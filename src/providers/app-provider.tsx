@@ -170,13 +170,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           await fetchInitialData(session);
         }
       } else {
-        // User is signed out. Clear all data.
+        // User is signed out. Clear all data and redirect.
         setLoggedInUser(null);
         setChats([]);
         setAllUsers([]);
         setDmRequests([]);
         setBlockedUsers([]);
         setEvents([]);
+        router.push('/login');
       }
 
       // Mark the app as "ready" to be displayed after the first auth event is processed.
@@ -189,7 +190,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [fetchInitialData, supabase.auth]); // Stable dependencies
+  }, [fetchInitialData, supabase.auth, router]);
 
 
   // Realtime subscriptions
@@ -271,34 +272,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         const currentChatId = pathname.split("/chat/")[1]
         const isChatOpen = String(newMessage.chat_id) === currentChatId
+        
+        // Only update unread count and show notification if the chat is not open
+        if (!isChatOpen) {
+            setChats((currentChats) =>
+              currentChats.map((c) => {
+                if (c.id === newMessage.chat_id) {
+                  const newUnreadCount = (c.unreadCount || 0) + 1
+                  return { ...c, last_message_content: newMessage.content, last_message_timestamp: newMessage.created_at, unreadCount: newUnreadCount }
+                }
+                return c
+              }),
+            )
 
-        if (isChatOpen) return;
-
-        setChats((currentChats) =>
-          currentChats.map((c) => {
-            if (c.id === newMessage.chat_id) {
-              const newUnreadCount = (c.unreadCount || 0) + 1
-              return { ...c, last_message_content: newMessage.content, last_message_timestamp: newMessage.created_at, unreadCount: newUnreadCount }
+            const isWindowFocused = document.hasFocus()
+            if (!isWindowFocused && Notification.permission === "granted" && !blockedUsers.includes(newMessage.user_id)) {
+              const sender = allUsers.find((u) => u.id === newMessage.user_id)
+              if (sender) {
+                const notification = new Notification(sender.name || "New Message", {
+                  body: newMessage.content || "Sent an attachment",
+                  icon: sender.avatar_url || "/logo/light_KCS.png",
+                  tag: `chat-${newMessage.chat_id}`,
+                })
+                notification.onclick = () => {
+                  window.focus()
+                  router.push(`/chat/${newMessage.chat_id}`)
+                  notification.close()
+                }
+              }
             }
-            return c
-          }),
-        )
-
-        const isWindowFocused = document.hasFocus()
-        if (!isWindowFocused && Notification.permission === "granted" && !blockedUsers.includes(newMessage.user_id)) {
-          const sender = allUsers.find((u) => u.id === newMessage.user_id)
-          if (sender) {
-            const notification = new Notification(sender.name || "New Message", {
-              body: newMessage.content || "Sent an attachment",
-              icon: sender.avatar_url || "/logo/light_KCS.png",
-              tag: `chat-${newMessage.chat_id}`,
-            })
-            notification.onclick = () => {
-              window.focus()
-              router.push(`/chat/${newMessage.chat_id}`)
-              notification.close()
-            }
-          }
         }
       }
 

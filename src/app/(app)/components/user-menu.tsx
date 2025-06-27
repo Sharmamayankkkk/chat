@@ -2,7 +2,6 @@
 'use client';
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { MoreHorizontal, Star } from "lucide-react";
 
 import {
@@ -24,14 +23,11 @@ import { useAppContext } from "@/providers/app-provider";
 import { createClient } from "@/lib/utils";
 
 export function UserMenu() {
-    const router = useRouter();
     const { loggedInUser } = useAppContext();
     const supabase = createClient();
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
-        router.push('/login');
-        router.refresh();
     };
 
     if (!loggedInUser) return null;
