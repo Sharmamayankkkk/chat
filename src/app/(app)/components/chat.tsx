@@ -44,7 +44,7 @@ import { Badge } from '@/components/ui/badge';
 import { ForwardMessageDialog } from './forward-message-dialog';
 import { ReportDialog } from './report-dialog';
 import { PinnedMessagesDialog } from './pinned-messages-dialog';
-
+import { LinkPreview } from './link-preview';
 
 interface ChatProps {
   chat: Chat;
@@ -70,7 +70,16 @@ const formatRecordingTime = (seconds: number) => {
 
 export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: ChatProps) {
     const { toast } = useToast();
-    const { themeSettings, allUsers, dmRequests, blockedUsers, blockUser, unblockUser } = useAppContext();
+    const { 
+        themeSettings, 
+        allUsers, 
+        dmRequests, 
+        blockedUsers, 
+        blockUser, 
+        unblockUser,
+        forwardMessage,
+        reportUser,
+    } = useAppContext();
     const [message, setMessage] = useState('');
     const [caption, setCaption] = useState('');
     const [editingMessage, setEditingMessage] = useState<{ id: number; content: string } | null>(null);
@@ -104,6 +113,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     const [messageToReport, setMessageToReport] = useState<Message | null>(null);
 
     const [isPinnedDialogOpen, setIsPinnedDialogOpen] = useState(false);
+    const [isFetchingLink, setIsFetchingLink] = useState(false);
 
     useEffect(() => {
         fetch('/api/assets')
@@ -146,12 +156,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             return false;
         }
 
-        // If it's not cross-gender, no restrictions
         if (!(loggedInUser.gender && chatPartner.gender && loggedInUser.gender !== chatPartner.gender)) {
             return false;
         }
 
-        // Check for an approved DM request.
         const hasPermission = dmRequests.some(req =>
             req.status === 'approved' &&
             ((req.from_user_id === loggedInUser.id && req.to_user_id === chatPartner.id) ||
@@ -160,9 +168,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         
         const isChatWithGurudev = chatPartner?.role === 'gurudev';
         if (isChatWithGurudev && !loggedInUser.is_admin) {
-            // Allow replies if there are existing messages
             if (chat.messages.length > 0) return false;
-            // Otherwise, check for permission
             return !hasPermission;
         }
 
@@ -187,7 +193,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         if (messageElement) {
             messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
             
-            // Add a temporary highlight class
             messageElement.classList.add('animate-highlight');
             setTimeout(() => {
                 messageElement.classList.remove('animate-highlight');
@@ -203,7 +208,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         if (highlightedElement) {
             jumpToMessage(highlightMessageId as number);
         } else {
-            // Only auto-scroll to bottom on first load IF not highlighting
             messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
         }
     }, [chat.id, highlightMessageId, chat.messages.length]);
@@ -573,11 +577,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     };
     
     const handleToggleStar = async (messageToStar: Message) => {
-        const originalMessages = [...chat.messages];
-        const updatedMessages = originalMessages.map(m => 
+        // Optimistically update UI
+        setMessages(prev => prev.map(m => 
             m.id === messageToStar.id ? { ...m, is_starred: !m.is_starred } : m
-        );
-        setMessages(updatedMessages);
+        ));
 
         const { error } = await supabase
             .from('messages')
@@ -585,19 +588,21 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             .eq('id', messageToStar.id);
         
         if (error) {
-            setMessages(originalMessages);
+            // Revert on error
+            setMessages(prev => prev.map(m => 
+                m.id === messageToStar.id ? { ...m, is_starred: !!messageToStar.is_starred } : m
+            ));
             toast({ variant: 'destructive', title: 'Error starring message', description: error.message });
         } else {
-            toast({ title: !messageToStar.is_starred ? 'Message starred!' : 'Message unstarred' });
+            toast({ title: !messageToStar.is_starred ? 'Message starred' : 'Message unstarred' });
         }
     };
 
     const handleTogglePin = async (messageToPin: Message) => {
-        const originalMessages = [...chat.messages];
-        const updatedMessages = originalMessages.map(m => 
+        // Optimistically update UI
+        setMessages(prev => prev.map(m => 
             m.id === messageToPin.id ? { ...m, is_pinned: !m.is_pinned } : m
-        );
-        setMessages(updatedMessages);
+        ));
 
         const { error } = await supabase
             .from('messages')
@@ -605,10 +610,13 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             .eq('id', messageToPin.id);
         
         if (error) {
-            setMessages(originalMessages);
+            // Revert on error
+            setMessages(prev => prev.map(m => 
+                m.id === messageToPin.id ? { ...m, is_pinned: !!messageToPin.is_pinned } : m
+            ));
             toast({ variant: 'destructive', title: 'Error pinning message', description: error.message });
         } else {
-            toast({ title: !messageToPin.is_pinned ? 'Message pinned!' : 'Message unpinned' });
+            toast({ title: !messageToPin.is_pinned ? 'Message pinned' : 'Message unpinned' });
         }
     };
 
@@ -617,7 +625,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
       backgroundSize: 'cover',
       backgroundPosition: 'center',
       filter: `brightness(${themeSettings.wallpaperBrightness / 100})`,
-      backgroundRepeat: themeSettings.chatWallpaper?.startsWith('/chat-bg.png') ? 'repeat' : 'repeat',
+      backgroundRepeat: themeSettings.chatWallpaper?.startsWith('/chat-bg.png') ? 'repeat' : 'no-repeat',
     };
 
     const outgoingBubbleStyle = {
@@ -690,17 +698,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                     elements.push(match);
                 }
             } else if (url) {
+                const metadata = { type: 'link_preview', url, name: url, size: 0 };
                 elements.push(
-                  <a
-                    key={`url-${offset}`}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline"
-                    style={{ color: 'inherit' }}
-                  >
-                    {url}
-                  </a>
+                    <LinkPreview key={`url-${offset}`} metadata={metadata} />
                 );
             }
 
@@ -897,7 +897,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
 
     const ReplyPreview = ({ repliedTo }: { repliedTo: Message }) => (
       <div
-          className="flex items-center gap-2 p-2 mb-2 rounded-md cursor-pointer border-l-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+          className="flex items-center gap-2 p-2 mb-2 rounded-md cursor-pointer border-l-2 bg-foreground/5 dark:bg-foreground/10 hover:bg-foreground/10 dark:hover:bg-foreground/20 transition-colors"
           style={{ borderColor: themeSettings.usernameColor }}
           onClick={() => jumpToMessage(repliedTo.id)}
       >
@@ -905,7 +905,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
               <p className="font-semibold text-sm truncate" style={{ color: themeSettings.usernameColor }}>
                   {repliedTo.profiles.name}
               </p>
-              <p className="text-xs truncate opacity-80" style={{ color: bubbleStyle.color, opacity: 0.8 }}>
+              <p className="text-xs truncate opacity-80" style={{ color: 'inherit', opacity: 0.8 }}>
                   {repliedTo.content || (repliedTo.attachment_metadata?.name || 'Attachment')}
               </p>
           </div>
@@ -1392,3 +1392,5 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     </div>
   );
 }
+
+    
