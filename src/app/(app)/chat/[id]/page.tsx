@@ -26,14 +26,13 @@ export default function ChatPage() {
   const searchParams = useSearchParams()
   const highlightMessageId = searchParams.get("highlight")
 
-  const { loggedInUser, isReady: isAppReady, resetUnreadCount } = useAppContext()
+  const { loggedInUser, allUsers, isReady: isAppReady, resetUnreadCount } = useAppContext()
   const [localChat, setLocalChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [isInitialLoading, setIsInitialLoading] = useState(true)
 
   const supabase = useRef(createClient()).current
 
-  // This function is now stable and does not depend on component state.
   const fetchFullChatData = useCallback(
     async (chatId: string) => {
       try {
@@ -64,20 +63,17 @@ export default function ChatPage() {
     [supabase],
   )
   
-  // This effect handles the INITIAL loading state. It only runs when the chat ID changes.
   useEffect(() => {
-    // When the chat ID changes, we are definitely doing an initial load.
     setIsInitialLoading(true)
-    setLocalChat(null) // Clear old chat data
-    setMessages([]) // Clear old messages
+    setLocalChat(null)
+    setMessages([])
 
     if (isAppReady && loggedInUser) {
       fetchFullChatData(params.id).finally(() => {
         setIsInitialLoading(false)
       })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.id, isAppReady, loggedInUser?.id]) // Depends on ID to re-trigger for new chats
+  }, [params.id, isAppReady, loggedInUser?.id, fetchFullChatData])
 
   useEffect(() => {
     if (supabase && params.id && loggedInUser?.id) {
@@ -96,22 +92,37 @@ export default function ChatPage() {
   }, [params.id, loggedInUser?.id, supabase, resetUnreadCount])
 
   const handleNewMessage = useCallback(
-    async (payload: RealtimePostgresChangesPayload<{ id: number }>) => {
-      try {
-        const { data, error } = await supabase
+    (payload: RealtimePostgresChangesPayload<Message>) => {
+      const newMessage = payload.new as Message
+      const senderProfile = allUsers.find((u) => u.id === newMessage.user_id)
+
+      if (!senderProfile) {
+        // Fallback if we don't know the sender (e.g., they just joined a group)
+        fetchFullChatData(params.id)
+        return
+      }
+      
+      // Add message instantly with sender info to prevent avatar blinking.
+      // `replied_to_message` will be missing for now.
+      const optimisticMessage: Message = { ...newMessage, profiles: senderProfile }
+      setMessages((current) => (current.some((m) => m.id === optimisticMessage.id) ? current : [...current, optimisticMessage]))
+
+      // If it's a reply, we need the replied_to_message data.
+      // We fetch it and replace the optimistic message with the full one.
+      if (newMessage.reply_to_message_id) {
+        supabase
           .from("messages")
           .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
-          .eq("id", payload.new.id)
+          .eq("id", newMessage.id)
           .single()
-        if (error) throw error
-        if (data) {
-          setMessages((current) => (current.some((m) => m.id === data.id) ? current : [...current, data as Message]))
-        }
-      } catch (error) {
-        console.error("Error fetching new message in real-time:", error)
+          .then(({ data: fullMessageData, error }) => {
+            if (fullMessageData && !error) {
+              setMessages((current) => current.map((m) => (m.id === fullMessageData.id ? (fullMessageData as Message) : m)))
+            }
+          })
       }
     },
-    [supabase],
+    [allUsers, supabase, params.id, fetchFullChatData],
   )
 
   const handleUpdatedMessage = useCallback(
@@ -119,16 +130,14 @@ export default function ChatPage() {
       setMessages((current) =>
         current.map((m) => {
           if (m.id === payload.new.id) {
-            // Merge the new data with the existing message.
-            // This preserves the `profiles` and `replied_to_message` objects,
-            // which are not included in the real-time UPDATE payload.
+            // Merge new data, preserving existing profile/reply info to prevent flicker.
             return { ...m, ...payload.new }
           }
           return m
         }),
       )
     },
-    [], // No dependencies needed, it's a pure state update
+    [],
   )
 
   const handleDeletedMessage = useCallback((payload: RealtimePostgresChangesPayload<{ id: number }>) => {
