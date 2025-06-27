@@ -1,3 +1,4 @@
+
 "use client"
 
 import { notFound, useParams, useSearchParams } from "next/navigation"
@@ -34,7 +35,6 @@ export default function ChatPage() {
 
   const fetchFullChatData = useCallback(
     async (chatId: string) => {
-      setIsLoading(true)
       try {
         const { data: chatData, error: chatError } = await supabase
           .from("chats")
@@ -58,8 +58,6 @@ export default function ChatPage() {
         console.error("Error fetching chat data:", error)
         setLocalChat(null)
         setMessages([])
-      } finally {
-        setIsLoading(false)
       }
     },
     [supabase],
@@ -67,7 +65,10 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (isAppReady && loggedInUser && params.id) {
-      fetchFullChatData(params.id)
+      setIsLoading(true)
+      fetchFullChatData(params.id).finally(() => {
+        setIsLoading(false)
+      })
     }
   }, [params.id, isAppReady, loggedInUser, fetchFullChatData])
 
@@ -108,7 +109,7 @@ export default function ChatPage() {
 
   const handleUpdatedMessage = useCallback(
     async (payload: RealtimePostgresChangesPayload<Message>) => {
-       try {
+      try {
         const { data, error } = await supabase
           .from("messages")
           .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
@@ -116,7 +117,7 @@ export default function ChatPage() {
           .single()
         if (error) throw error
         if (data) {
-           setMessages((current) => current.map((m) => m.id === data.id ? data as Message : m))
+          setMessages((current) => current.map((m) => (m.id === data.id ? (data as Message) : m)))
         }
       } catch (error) {
         console.error("Error fetching updated message in real-time:", error)
@@ -156,7 +157,7 @@ export default function ChatPage() {
     }
   }, [params.id, supabase, isAppReady, handleNewMessage, handleUpdatedMessage, handleDeletedMessage])
 
-  if ((isLoading && !localChat) || !isAppReady) {
+  if (isLoading || !isAppReady) {
     return <ChatPageLoading />
   }
 
