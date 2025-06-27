@@ -33,40 +33,39 @@ import { createClient } from '@/lib/utils';
 import type { User } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { useAppContext } from '@/providers/app-provider';
 
 export function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [currentAdminId, setCurrentAdminId] = useState<string | null>(null);
   const supabase = createClient();
   const { toast } = useToast();
-  const { loggedInUser } = useAppContext();
   const router = useRouter();
 
-  const fetchUsers = async () => {
-    setIsLoading(true);
-    const { data, error } = await supabase
-        .from('profiles')
-        .select(`*`)
-        .order('name', { ascending: true });
-
-    if (error) {
-      console.error("Error fetching users:", error);
-      toast({ variant: 'destructive', title: "Error fetching users", description: error.message });
-      setUsers([]);
-    } else {
-       const formattedUsers = data.map((u: any) => ({
-           ...u,
-           email: u.user_email?.email
-       }));
-      setUsers(formattedUsers as User[]);
-    }
-    setIsLoading(false);
-  };
-
   useEffect(() => {
+    const fetchUsers = async () => {
+      setIsLoading(true);
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if(userData.user) {
+        setCurrentAdminId(userData.user.id);
+      }
+
+      const { data, error } = await supabase
+          .from('profiles')
+          .select(`*`)
+          .order('name', { ascending: true });
+
+      if (error) {
+        console.error("Error fetching users:", error);
+        toast({ variant: 'destructive', title: "Error fetching users", description: error.message });
+        setUsers([]);
+      } else {
+        setUsers(data as User[]);
+      }
+      setIsLoading(false);
+    };
     fetchUsers();
-  }, []);
+  }, [supabase, toast]);
 
   const toggleAdminStatus = async (user: User) => {
     const { error } = await supabase
@@ -78,7 +77,16 @@ export function UserManagement() {
       toast({ variant: 'destructive', title: "Error updating user", description: error.message });
     } else {
       toast({ title: "User updated", description: `${user.name} is now ${!user.is_admin ? 'an admin' : 'a regular user'}.`});
-      fetchUsers(); // Re-fetch users to update UI
+      // Re-fetch users to update UI
+       const { data, error: refetchError } = await supabase
+          .from('profiles')
+          .select(`*`)
+          .order('name', { ascending: true });
+       if (refetchError) {
+         toast({ variant: 'destructive', title: "Error refetching users", description: refetchError.message });
+       } else {
+         setUsers(data as User[]);
+       }
     }
   };
 
@@ -91,10 +99,10 @@ export function UserManagement() {
       }
       return <Badge variant="outline">User</Badge>;
   }
-  
+
   const viewProfile = (username: string) => {
     router.push(`/profile/${username}`);
-  }
+  };
 
   return (
     <Card>
@@ -109,7 +117,6 @@ export function UserManagement() {
           <TableHeader>
             <TableRow>
               <TableHead>User</TableHead>
-              <TableHead>Email</TableHead>
               <TableHead>Gender</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>
@@ -130,7 +137,6 @@ export function UserManagement() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell><Skeleton className="h-4 w-40" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                   <TableCell><Skeleton className="h-6 w-20" /></TableCell>
                   <TableCell><Skeleton className="h-8 w-8" /></TableCell>
@@ -153,7 +159,6 @@ export function UserManagement() {
                     </div>
                   </div>
                 </TableCell>
-                <TableCell className="text-muted-foreground">{user.email || 'N/A'}</TableCell>
                 <TableCell className="capitalize">
                   {user.gender === 'male' ? 'Prabhuji' : user.gender === 'female' ? 'Mataji' : 'N/A'}
                 </TableCell>
@@ -163,7 +168,7 @@ export function UserManagement() {
                 <TableCell>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button aria-haspopup="true" size="icon" variant="ghost" disabled={user.id === loggedInUser?.id}>
+                      <Button aria-haspopup="true" size="icon" variant="ghost" disabled={user.id === currentAdminId}>
                         <MoreHorizontal className="h-4 w-4" />
                         <span className="sr-only">Toggle menu</span>
                       </Button>

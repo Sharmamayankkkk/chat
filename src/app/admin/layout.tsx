@@ -17,6 +17,7 @@ import { Icons } from "@/components/icons";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAppContext } from '@/providers/app-provider';
 import React, { useEffect } from 'react';
+import { createClient } from '@/lib/utils';
 
 function AdminShellLoading() {
   return (
@@ -29,12 +30,19 @@ function AdminShellLoading() {
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { loggedInUser, isReady } = useAppContext();
   const router = useRouter();
+  const supabase = createClient();
   
   useEffect(() => {
     if (isReady && (!loggedInUser || !loggedInUser.is_admin)) {
       router.push('/login');
     }
   }, [isReady, loggedInUser, router]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+    router.refresh(); 
+  };
 
   if (!isReady || !loggedInUser || !loggedInUser.is_admin) {
     return <AdminShellLoading />;
@@ -74,7 +82,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     <DropdownMenuItem>Profile</DropdownMenuItem>
                 </Link>
                 <DropdownMenuSeparator />
-                 <DropdownMenuItem disabled>Logout</DropdownMenuItem>
+                 <DropdownMenuItem onClick={handleLogout}>Logout</DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>
        </header>
