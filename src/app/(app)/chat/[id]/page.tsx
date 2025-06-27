@@ -1,3 +1,4 @@
+
 "use client"
 
 import { notFound, useParams, useSearchParams } from "next/navigation"
@@ -52,7 +53,7 @@ export default function ChatPage() {
 
       const { data: messagesData, error: messagesError } = await supabase
         .from("messages")
-        .select(`*, profiles(*), read_by`)
+        .select(`*, profiles(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
         .eq("chat_id", chatId)
         .order("created_at", { ascending: true })
 
@@ -101,37 +102,52 @@ export default function ChatPage() {
     }
   }, [params.id, loggedInUser, supabase, resetUnreadCount])
 
-  const handleNewMessage = useCallback(
-    (payload: RealtimePostgresChangesPayload<Message>) => {
-      const newMessage = payload.new as Message
-      console.log("New message received in chat page:", newMessage)
+ const handleNewMessage = useCallback(
+    (payload: RealtimePostgresChangesPayload<any>) => {
+      const newMessage = payload.new as Message;
+      console.log("New message received in chat page:", newMessage);
 
-      // Find the sender's profile from the list of all users we already have
-      const senderProfile = allUsers.find((u) => u.id === newMessage.user_id)
-
-      if (senderProfile) {
-        // Construct the full message object without needing another fetch
-        const fullMessage: Message = { ...newMessage, profiles: senderProfile }
-        setMessages((currentMessages) => {
-          // Prevent duplicates
-          if (currentMessages.some((m) => m.id === fullMessage.id)) {
-            return currentMessages
+      const senderProfile = allUsers.find((u) => u.id === newMessage.user_id);
+      
+      const constructMessage = async (msg: Message): Promise<Message> => {
+        const fullMessage: Message = { ...msg, profiles: senderProfile! };
+        
+        // If it's a reply, we need to fetch the message it replied to,
+        // as this won't be in the realtime payload.
+        if (msg.reply_to_message_id && !msg.replied_to_message) {
+          const { data: repliedToData, error } = await supabase
+            .from('messages')
+            .select('*, profiles!user_id(*)')
+            .eq('id', msg.reply_to_message_id)
+            .single();
+            
+          if (!error && repliedToData) {
+            fullMessage.replied_to_message = repliedToData as Message;
           }
-          console.log("Adding new message to UI:", fullMessage)
-          return [...currentMessages, fullMessage]
-        })
+        }
+        return fullMessage;
+      }
+      
+      if (senderProfile) {
+        constructMessage(newMessage).then(fullMessage => {
+            setMessages((currentMessages) => {
+              if (currentMessages.some((m) => m.id === fullMessage.id)) {
+                return currentMessages;
+              }
+              console.log("Adding new message to UI:", fullMessage);
+              return [...currentMessages, fullMessage];
+            });
+        });
       } else {
-        // Fallback to refetch if user profile not found (should be rare)
-        console.log("Sender profile not found, refetching chat data")
-        fetchFullChatData(params.id)
+        console.warn("Sender profile not found, refetching chat data");
+        fetchFullChatData(params.id);
       }
     },
-    [allUsers, fetchFullChatData, params.id],
-  )
-
+    [allUsers, fetchFullChatData, params.id, supabase]
+  );
+  
   // Real-time subscriptions
   useEffect(() => {
-    // Guard clause to ensure all context data is ready before subscribing
     if (!isAppReady || !supabase || !params.id) return
 
     console.log("Setting up real-time subscription for chat:", params.id)

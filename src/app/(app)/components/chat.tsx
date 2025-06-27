@@ -5,7 +5,8 @@ import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react'
 import Image from 'next/image';
 import Link from 'next/link';
 import { v4 as uuidv4 } from 'uuid';
-import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert } from 'lucide-react';
+import { useSwipeable } from 'react-swipeable';
+import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,7 +43,7 @@ import { RequestDmDialog } from './request-dm-dialog';
 import { Badge } from '@/components/ui/badge';
 import { ForwardMessageDialog } from './forward-message-dialog';
 import { ReportDialog } from './report-dialog';
-import { LinkPreview } from './link-preview';
+import { PinnedMessagesDialog } from './pinned-messages-dialog';
 
 
 interface ChatProps {
@@ -69,10 +70,11 @@ const formatRecordingTime = (seconds: number) => {
 
 export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: ChatProps) {
     const { toast } = useToast();
-    const { themeSettings, allUsers, dmRequests, forwardMessage, blockedUsers, blockUser, unblockUser } = useAppContext();
+    const { themeSettings, allUsers, dmRequests, blockedUsers, blockUser, unblockUser } = useAppContext();
     const [message, setMessage] = useState('');
     const [caption, setCaption] = useState('');
     const [editingMessage, setEditingMessage] = useState<{ id: number; content: string } | null>(null);
+    const [replyingTo, setReplyingTo] = useState<Message | null>(null);
     const [attachmentPreview, setAttachmentPreview] = useState<{ file: File, url: string } | null>(null);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [isRequestDmOpen, setIsRequestDmOpen] = useState(false);
@@ -100,6 +102,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
 
     const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
     const [messageToReport, setMessageToReport] = useState<Message | null>(null);
+
+    const [isPinnedDialogOpen, setIsPinnedDialogOpen] = useState(false);
 
     useEffect(() => {
         fetch('/api/assets')
@@ -134,6 +138,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     const isGroupAdmin = useMemo(() => 
         isGroup && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin, 
     [chat, loggedInUser.id, isGroup]);
+    
+    const pinnedMessages = useMemo(() => chat.messages.filter(m => m.is_pinned), [chat.messages]);
 
     const isDmRestricted = useMemo(() => {
         if (chat.type !== 'dm' || !chatPartner || loggedInUser.is_admin || chatPartner.is_admin) {
@@ -176,11 +182,26 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         );
     }, [dmRequests, loggedInUser, chatPartner]);
 
+    const jumpToMessage = (messageId: number) => {
+        const messageElement = document.getElementById(`message-${messageId}`);
+        if (messageElement) {
+            messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // Add a temporary highlight class
+            messageElement.classList.add('animate-highlight');
+            setTimeout(() => {
+                messageElement.classList.remove('animate-highlight');
+            }, 1500);
+        } else {
+            toast({ variant: 'destructive', title: 'Message not found', description: 'The original message may not be loaded.' });
+        }
+    };
+
     useEffect(() => {
         const highlightedElement = highlightMessageId ? document.getElementById(`message-${highlightMessageId}`) : null;
 
         if (highlightedElement) {
-            highlightedElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            jumpToMessage(highlightMessageId as number);
         } else {
             // Only auto-scroll to bottom on first load IF not highlighting
             messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
@@ -224,14 +245,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             let finalContent = contentToSave ?? content;
             let finalAttachmentMetadata = attachmentMetadata;
             
-            // Check for link and fetch metadata
-            const urlRegex = /(https?:\/\/[^\s]+)/g;
-            const urls = content.match(urlRegex);
-            if (urls && urls.length > 0 && !attachment) {
-                // This feature is now disabled as per previous request.
-            }
-
-
             const { error } = await supabase
                 .from('messages')
                 .insert({
@@ -240,6 +253,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                     content: finalContent,
                     attachment_url: attachmentUrl,
                     attachment_metadata: finalAttachmentMetadata,
+                    reply_to_message_id: replyingTo?.id,
                 })
                 .select('*, profiles(*)')
                 .single();
@@ -248,6 +262,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             
             setMessage('');
             setCaption('');
+            setReplyingTo(null);
             setAttachmentPreview(null);
             setIsPreviewOpen(false);
             setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
@@ -280,12 +295,13 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                     content: null,
                     attachment_url: stickerUrl,
                     attachment_metadata: attachmentMetadata,
+                    reply_to_message_id: replyingTo?.id,
                 })
                 .select('*, profiles(*)')
                 .single();
     
             if (error) throw error;
-            
+            setReplyingTo(null);
             setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     
         } catch (error: any) {
@@ -322,7 +338,14 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     };
 
     const handleStartEdit = (message: Message) => {
+        setReplyingTo(null);
         setEditingMessage({ id: message.id, content: message.content || '' });
+    };
+
+    const handleStartReply = (message: Message) => {
+        setEditingMessage(null);
+        setReplyingTo(message);
+        textareaRef.current?.focus();
     };
 
     const handleCancelEdit = () => setEditingMessage(null);
@@ -562,6 +585,19 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         }
     };
 
+    const handleTogglePin = async (message: Message) => {
+        const { error } = await supabase
+            .from('messages')
+            .update({ is_pinned: !message.is_pinned })
+            .eq('id', message.id);
+        
+        if (error) {
+            toast({ variant: 'destructive', title: 'Error pinning message', description: error.message });
+        } else {
+            toast({ title: message.is_pinned ? 'Message unpinned' : 'Message pinned!' });
+        }
+    };
+
     const wallpaperStyle = {
       backgroundImage: themeSettings.chatWallpaper ? `url(${themeSettings.chatWallpaper})` : `url('/chat-bg.png')`,
       backgroundSize: 'cover',
@@ -668,10 +704,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     const renderMessageContent = (message: Message) => {
         if (message.attachment_url) {
             const { type = '', name = 'attachment', size = 0 } = message.attachment_metadata || {};
-
-            if (type === 'link_preview') {
-                 return <LinkPreview metadata={message.attachment_metadata!} />
-            }
 
             if (type === 'event_share' && message.attachment_metadata?.eventId) {
                 const metadata = message.attachment_metadata;
@@ -823,12 +855,214 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
       )
     }
 
+  const MessageBubble = ({ message }: { message: Message }) => {
+    const isMyMessage = message.user_id === loggedInUser.id;
+    const sender = message.profiles;
+    const isEditing = editingMessage?.id === message.id;
+    const messageStatus = getMessageStatus(message);
+
+    const swipeHandlers = useSwipeable({
+      onSwipedRight: () => {
+        if (!isMyMessage) handleStartReply(message);
+      },
+      onSwipedLeft: () => {
+        if (isMyMessage) handleStartReply(message);
+      },
+      trackMouse: true,
+      preventScrollOnSwipe: true,
+    });
+
+    if (!sender) {
+        return <div key={message.id}>Loading message...</div>;
+    }
+    
+    const bubbleStyle = isMyMessage ? outgoingBubbleStyle : incomingBubbleStyle;
+    const senderName = isGroup && sender.role === 'gurudev' ? chat.name : sender.name;
+    const senderAvatar = sender.avatar_url;
+    const senderFallback = (senderName || 'U').charAt(0);
+
+    const ReplyPreview = ({ repliedTo }: { repliedTo: Message }) => (
+        <div
+            className="flex items-center gap-2 p-2 mb-2 rounded-md cursor-pointer border-l-2"
+            style={{
+                backgroundColor: 'rgba(0,0,0,0.1)',
+                borderColor: themeSettings.usernameColor,
+            }}
+            onClick={() => jumpToMessage(repliedTo.id)}
+        >
+            <div className="flex-1 overflow-hidden">
+                <p className="font-semibold text-sm truncate" style={{ color: themeSettings.usernameColor }}>
+                    {repliedTo.profiles.name}
+                </p>
+                <p className="text-xs truncate opacity-80">
+                    {repliedTo.content || 'Attachment'}
+                </p>
+            </div>
+        </div>
+    );
+    
+    return (
+      <div key={message.id} id={`message-${message.id}`} className={cn(
+          "flex items-end gap-2 group/message",
+          isMyMessage ? "justify-end" : "justify-start",
+          message.id === highlightMessageId && "rounded-lg"
+      )}>
+      {!isMyMessage && (
+          <Avatar className="h-8 w-8 self-end">
+          <AvatarImage src={senderAvatar} alt={senderName} data-ai-hint="avatar" />
+          <AvatarFallback>{senderFallback}</AvatarFallback>
+          </Avatar>
+      )}
+      <div {...swipeHandlers} className={cn("relative transition-transform duration-200 ease-out", isMyMessage ? "group-data-[swiped=true]/message:translate-x-[-2rem]" : "group-data-[swiped=true]/message:translate-x-[2rem]")}>
+          <div 
+              className={cn("group/bubble relative max-w-[85%] sm:max-w-[80%] md:max-w-md lg:max-w-lg rounded-lg text-sm px-2 sm:px-3 py-2 break-words min-w-0")}
+              style={bubbleStyle}
+          >
+              {isEditing ? (
+                  <div className="w-full">
+                      <Textarea
+                          value={editingMessage.content}
+                          onChange={(e) => setEditingMessage({ ...editingMessage, content: e.target.value })}
+                          className="w-full resize-none bg-background text-foreground"
+                          rows={3}
+                      />
+                      <div className="mt-2 flex justify-end gap-2">
+                          <Button variant="ghost" size="sm" onClick={handleCancelEdit}>Cancel</Button>
+                          <Button size="sm" onClick={handleSaveEdit}>Save changes</Button>
+                      </div>
+                  </div>
+              ) : (
+                  <>
+                      {isGroup && !isMyMessage && (
+                          <div className="flex items-center gap-2 font-semibold mb-1 text-sm">
+                              <span style={{ color: themeSettings.usernameColor }}>
+                                  {senderName}
+                              </span>
+                              {sender.role === 'gurudev' && (
+                                  <Badge variant="destructive" className="text-xs px-1.5 py-0 leading-none">Gurudev</Badge>
+                              )}
+                          </div>
+                      )}
+                      {message.replied_to_message && <ReplyPreview repliedTo={message.replied_to_message} />}
+                      {renderMessageContent(message)}
+                      <div className="text-xs mt-1 flex items-center gap-1.5 opacity-70" style={{ justifyContent: isMyMessage ? 'flex-end' : 'flex-start' }}>
+                          {message.is_pinned && <Pin className="h-3 w-3 text-current mr-1" />}
+                          {message.is_edited && <span className="text-xs italic">Edited</span>}
+                          {message.is_starred && <Star className="h-3 w-3 text-amber-400 fill-amber-400 mr-1" />}
+                          <span>{format(new Date(message.created_at), 'p')}</span>
+                          {isMyMessage && messageStatus === 'sent' && <Check className="h-4 w-4" />}
+                          {isMyMessage && messageStatus === 'read' && <CheckCheck className="h-4 w-4 text-primary" />}
+                      </div>
+                  </>
+              )}
+              
+              {!isEditing && (
+                  <div className={cn(
+                      "absolute -top-4 flex items-center gap-1 opacity-0 group-hover/bubble:opacity-100 transition-opacity",
+                      isMyMessage ? "left-[-8px]" : "right-[-8px]"
+                  )}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background" onClick={() => handleStartReply(message)}>
+                          <Reply className="h-4 w-4" />
+                        </Button>
+                       <Popover>
+                          <PopoverTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background">
+                                  <SmilePlus className="h-4 w-4" />
+                              </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0 border-none">
+                              <EmojiPicker 
+                                onEmojiClick={(emojiData) => onReact(emojiData, message)} 
+                                customEmojis={reactionPickerCustomEmojis}
+                                onCustomEmojiClick={(emojiData) => onCustomReact(emojiData.id, message)}
+                                defaultSkinTone={SkinTones.NEUTRAL}
+                                getEmojiUrl={(unified, style) => `https://cdn.jsdelivr.net/npm/emoji-datasource-apple/img/${style}/64/${unified}.png`}
+                              />
+                          </PopoverContent>
+                      </Popover>
+                      <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background">
+                                  <MoreVertical className="h-4 w-4" />
+                              </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleStartReply(message)}>
+                                <Reply className="mr-2 h-4 w-4" />
+                                <span>Reply</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setMessageToForward(message)}>
+                                  <Share2 className="mr-2 h-4 w-4" />
+                                  <span>Forward</span>
+                              </DropdownMenuItem>
+                              {message.content && (
+                                  <DropdownMenuItem onClick={() => handleCopy(message.content as string)}>
+                                      <Copy className="mr-2 h-4 w-4" />
+                                      <span>Copy</span>
+                                  </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem onClick={() => handleToggleStar(message)}>
+                                  <Star className="mr-2 h-4 w-4" />
+                                  <span>{message.is_starred ? 'Unstar' : 'Star'}</span>
+                              </DropdownMenuItem>
+                               <DropdownMenuItem onClick={() => handleTogglePin(message)} disabled={!isGroupAdmin && !isMyMessage}>
+                                  {message.is_pinned ? <PinOff className="mr-2 h-4 w-4" /> : <Pin className="mr-2 h-4 w-4" />}
+                                  <span>{message.is_pinned ? 'Unpin' : 'Pin'}</span>
+                              </DropdownMenuItem>
+                               {!isMyMessage && (
+                                  <DropdownMenuItem onClick={() => { setMessageToReport(message); setIsReportDialogOpen(true); }}>
+                                      <ShieldAlert className="mr-2 h-4 w-4" />
+                                      <span>Report Message</span>
+                                  </DropdownMenuItem>
+                              )}
+                              {isMyMessage && (
+                              <>
+                                  <DropdownMenuSeparator />
+                                  {message.content && (
+                                      <DropdownMenuItem onClick={() => handleStartEdit(message)}>
+                                          <Pencil className="mr-2 h-4 w-4" />
+                                          <span>Edit</span>
+                                      </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteForEveryone(message.id)}>
+                                      <Trash2 className="mr-2 h-4 w-4" />
+                                      <span>Delete for everyone</span>
+                                  </DropdownMenuItem>
+                              </>
+                              )}
+                          </DropdownMenuContent>
+                      </DropdownMenu>
+                  </div>
+              )}
+              {renderReactions(message)}
+          </div>
+        </div>
+      {isMyMessage && (
+          <Avatar className="h-8 w-8 self-end">
+              <AvatarImage src={sender.avatar_url} alt={sender.name} data-ai-hint="avatar" />
+              <AvatarFallback>{sender.name?.charAt(0)}</AvatarFallback>
+          </Avatar>
+      )}
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-dvh flex-col">
         {chatPartner && <RequestDmDialog open={isRequestDmOpen} onOpenChange={setIsRequestDmOpen} targetUser={chatPartner} />}
         <ForwardMessageDialog message={messageToForward} open={!!messageToForward} onOpenChange={(open) => !open && setMessageToForward(null)} />
         {chatPartner && <ReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} userToReport={chatPartner} messageToReport={messageToReport} />}
-
+        <PinnedMessagesDialog
+            open={isPinnedDialogOpen}
+            onOpenChange={setIsPinnedDialogOpen}
+            messages={pinnedMessages}
+            onJumpToMessage={jumpToMessage}
+            onUnpinMessage={(id) => {
+                const msg = chat.messages.find(m => m.id === id);
+                if (msg) handleTogglePin(msg);
+            }}
+            isAdmin={isGroupAdmin || false}
+        />
         <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
             <DialogContent className="max-w-3xl">
                 <DialogHeader>
@@ -894,6 +1128,18 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             </div>
         </div>
         <div className="flex items-center gap-1">
+            {isGroup && pinnedMessages.length > 0 && (
+                <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" onClick={() => setIsPinnedDialogOpen(true)}>
+                                <Pin className="h-5 w-5" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>View Pinned Messages</TooltipContent>
+                    </Tooltip>
+                </TooltipProvider>
+            )}
             <Button variant="ghost" size="icon" onClick={() => toast({ title: "Coming Soon", description: "Voice calls will be available soon." })}><Phone className="h-5 w-5"/></Button>
             <Button variant="ghost" size="icon" onClick={() => toast({ title: "Coming Soon", description: "Video calls will be available soon." })}><Video className="h-5 w-5"/></Button>
             <DropdownMenu>
@@ -923,152 +1169,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             <div className="p-4 space-y-6">
             {chat.messages
             .filter(message => !blockedUsers.includes(message.user_id))
-            .map((message) => {
-                const isMyMessage = message.user_id === loggedInUser.id;
-                const sender = message.profiles;
-                const isEditing = editingMessage?.id === message.id;
-                const messageStatus = getMessageStatus(message);
-
-                if (!sender) {
-                    return <div key={message.id}>Loading message...</div>;
-                }
-                
-                const bubbleStyle = isMyMessage ? outgoingBubbleStyle : incomingBubbleStyle;
-                const senderName = isGroup && sender.role === 'gurudev' ? chat.name : sender.name;
-                const senderAvatar = sender.avatar_url;
-                const senderFallback = (senderName || 'U').charAt(0);
-
-
-                return (
-                <div key={message.id} id={`message-${message.id}`} className={cn(
-                    "flex items-end gap-2",
-                    isMyMessage ? "justify-end" : "justify-start",
-                    message.id === highlightMessageId && "animate-highlight rounded-lg"
-                )}>
-                {!isMyMessage && (
-                    <Avatar className="h-8 w-8 self-end">
-                    <AvatarImage src={senderAvatar} alt={senderName} data-ai-hint="avatar" />
-                    <AvatarFallback>{senderFallback}</AvatarFallback>
-                    </Avatar>
-                )}
-                <div 
-                    className={cn("group relative max-w-[85%] sm:max-w-[80%] md:max-w-md lg:max-w-lg rounded-lg text-sm px-2 sm:px-3 py-2 break-words min-w-0")}
-                    style={bubbleStyle}
-                >
-                    {isEditing ? (
-                        <div className="w-full">
-                            <Textarea
-                                value={editingMessage.content}
-                                onChange={(e) => setEditingMessage({ ...editingMessage, content: e.target.value })}
-                                className="w-full resize-none bg-background text-foreground"
-                                rows={3}
-                            />
-                            <div className="mt-2 flex justify-end gap-2">
-                                <Button variant="ghost" size="sm" onClick={handleCancelEdit}>Cancel</Button>
-                                <Button size="sm" onClick={handleSaveEdit}>Save changes</Button>
-                            </div>
-                        </div>
-                    ) : (
-                        <>
-                            {isGroup && !isMyMessage && (
-                                <div className="flex items-center gap-2 font-semibold mb-1 text-sm">
-                                    <span style={{ color: themeSettings.usernameColor }}>
-                                        {senderName}
-                                    </span>
-                                    {sender.role === 'gurudev' && (
-                                        <Badge variant="destructive" className="text-xs px-1.5 py-0 leading-none">Gurudev</Badge>
-                                    )}
-                                </div>
-                            )}
-                            {renderMessageContent(message)}
-                            <div className="text-xs mt-1 flex items-center gap-1.5 opacity-70" style={{ justifyContent: isMyMessage ? 'flex-end' : 'flex-start' }}>
-                                {message.is_edited && <span className="text-xs italic">Edited</span>}
-                                {message.is_starred && <Star className="h-3 w-3 text-amber-400 fill-amber-400 mr-1" />}
-                                <span>{format(new Date(message.created_at), 'p')}</span>
-                                {isMyMessage && messageStatus === 'sent' && <Check className="h-4 w-4" />}
-                                {isMyMessage && messageStatus === 'read' && <CheckCheck className="h-4 w-4 text-primary" />}
-                            </div>
-                        </>
-                    )}
-                    
-                    {!isEditing && (
-                        <div className={cn(
-                            "absolute -top-4 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity",
-                            isMyMessage ? "left-[-8px]" : "right-[-8px]"
-                        )}>
-                             <Popover>
-                                <PopoverTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background">
-                                        <SmilePlus className="h-4 w-4" />
-                                    </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0 border-none">
-                                    <EmojiPicker 
-                                      onEmojiClick={(emojiData) => onReact(emojiData, message)} 
-                                      customEmojis={reactionPickerCustomEmojis}
-                                      onCustomEmojiClick={(emojiData) => onCustomReact(emojiData.id, message)}
-                                      defaultSkinTone={SkinTones.NEUTRAL}
-                                      getEmojiUrl={(unified, style) => `https://cdn.jsdelivr.net/npm/emoji-datasource-apple/img/${style}/64/${unified}.png`}
-                                    />
-                                </PopoverContent>
-                            </Popover>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background">
-                                        <MoreVertical className="h-4 w-4" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => setMessageToForward(message)}>
-                                        <Share2 className="mr-2 h-4 w-4" />
-                                        <span>Forward</span>
-                                    </DropdownMenuItem>
-                                    {message.content && (
-                                        <DropdownMenuItem onClick={() => handleCopy(message.content as string)}>
-                                            <Copy className="mr-2 h-4 w-4" />
-                                            <span>Copy</span>
-                                        </DropdownMenuItem>
-                                    )}
-                                    <DropdownMenuItem onClick={() => handleToggleStar(message)}>
-                                        <Star className="mr-2 h-4 w-4" />
-                                        <span>{message.is_starred ? 'Unstar' : 'Star'}</span>
-                                    </DropdownMenuItem>
-                                     {!isMyMessage && (
-                                        <DropdownMenuItem onClick={() => { setMessageToReport(message); setIsReportDialogOpen(true); }}>
-                                            <ShieldAlert className="mr-2 h-4 w-4" />
-                                            <span>Report Message</span>
-                                        </DropdownMenuItem>
-                                    )}
-                                    {isMyMessage && (
-                                    <>
-                                        <DropdownMenuSeparator />
-                                        {message.content && (
-                                            <DropdownMenuItem onClick={() => handleStartEdit(message)}>
-                                                <Pencil className="mr-2 h-4 w-4" />
-                                                <span>Edit</span>
-                                            </DropdownMenuItem>
-                                        )}
-                                        <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteForEveryone(message.id)}>
-                                            <Trash2 className="mr-2 h-4 w-4" />
-                                            <span>Delete for everyone</span>
-                                        </DropdownMenuItem>
-                                    </>
-                                    )}
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                        </div>
-                    )}
-                    {renderReactions(message)}
-                </div>
-                {isMyMessage && (
-                    <Avatar className="h-8 w-8 self-end">
-                        <AvatarImage src={sender.avatar_url} alt={sender.name} data-ai-hint="avatar" />
-                        <AvatarFallback>{sender.name?.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                )}
-                </div>
-                );
-            })}
+            .map((message) => <MessageBubble key={message.id} message={message} />)}
             <div ref={messagesEndRef} />
             </div>
         </ScrollArea>
@@ -1134,6 +1235,15 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                 onChange={handleFileSelect}
                 className="hidden"
             />
+            {replyingTo && (
+                <div className="flex items-center justify-between p-2 pl-3 mb-2 rounded-t-md bg-muted text-sm border-b">
+                    <div>
+                        <p className="font-semibold text-primary">Replying to {replyingTo.profiles.name}</p>
+                        <p className="text-muted-foreground truncate max-w-xs">{replyingTo.content || 'Attachment'}</p>
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={() => setReplyingTo(null)} className="h-7 w-7"><X className="h-4 w-4"/></Button>
+                </div>
+            )}
             <div className="relative">
                {mentionQuery !== null && (
                     <Card className="absolute bottom-full left-0 mb-2 w-72 shadow-lg z-50">
@@ -1170,7 +1280,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
               <Textarea
                 ref={textareaRef}
                 placeholder={isGroup ? "Type @ to mention users..." : "Type a message..."}
-                className="pr-28 resize-none min-h-[40px]"
+                className={cn("pr-28 resize-none min-h-[40px]", replyingTo && "rounded-t-none")}
                 rows={1}
                 value={message}
                 onChange={handleMessageChange}
