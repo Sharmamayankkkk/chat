@@ -119,8 +119,10 @@ export default function ChatPage() {
     }
 
     const handleUpdatedMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
-      // To prevent blinking, we merge new data with existing message to preserve profile info
-      setMessages((current) => current.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)))
+      const fullMessage = await fetchFullMessage(payload.new.id)
+      if (fullMessage) {
+        setMessages((current) => current.map((m) => (m.id === fullMessage.id ? fullMessage : m)))
+      }
     }
 
     const handleDeletedMessage = (payload: RealtimePostgresChangesPayload<{ id: number }>) => {

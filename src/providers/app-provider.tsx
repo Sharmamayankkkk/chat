@@ -403,27 +403,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const newMessage = payload.new as Message
       if (newMessage.user_id === loggedInUser.id) return
 
-      console.log("New message received in app provider:", newMessage)
-
       const currentChatId = pathname.split("/chat/")[1]
       const isChatOpen = String(newMessage.chat_id) === currentChatId
+      
+      // If the chat is open, the chat page component will handle it.
+      // This provider should only handle updates for INACTIVE chats.
+      if (isChatOpen) {
+          return;
+      }
+      
       const isWindowFocused = document.hasFocus()
-
-      console.log(
-        "Chat open?",
-        isChatOpen,
-        "Window focused?",
-        isWindowFocused,
-        "Current chat:",
-        currentChatId,
-        "Message chat:",
-        newMessage.chat_id,
-      )
 
       setChats((currentChats) =>
         currentChats.map((c) => {
           if (c.id === newMessage.chat_id) {
-            const newUnreadCount = !isChatOpen || !isWindowFocused ? (c.unreadCount || 0) + 1 : c.unreadCount
+            const newUnreadCount = (c.unreadCount || 0) + 1;
             return {
               ...c,
               last_message_content: newMessage.attachment_url
@@ -437,15 +431,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }),
       )
 
-      // Show notification if chat is not focused or not open
-      if (!isChatOpen || !isWindowFocused) {
-        console.log("Attempting to show notification...")
-        console.log("Notification permission:", Notification.permission)
-
+      // Show notification if window is not focused
+      if (!isWindowFocused) {
         if (Notification.permission === "granted") {
           const sender = allUsers.find((u) => u.id === newMessage.user_id)
           if (!sender || blockedUsers.includes(sender.id)) {
-            console.log("Sender not found or blocked")
             return
           }
 
@@ -456,8 +446,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
               ? `Sent: ${newMessage.attachment_metadata.name}`
               : "Sent an attachment")
 
-          console.log("Creating notification:", { title, body })
-
           try {
             const notification = new Notification(title, {
               body: body,
@@ -466,41 +454,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
               requireInteraction: false,
               silent: false,
             })
-
-            console.log("Notification created successfully")
-
-            // Auto-close notification after 8 seconds
-            setTimeout(() => {
-              try {
-                notification.close()
-              } catch (e) {
-                console.log("Notification already closed")
-              }
-            }, 8000)
+            
+            setTimeout(() => notification.close(), 8000)
 
             notification.onclick = () => {
-              console.log("Notification clicked")
               window.focus()
               router.push(`/chat/${newMessage.chat_id}`)
-              try {
-                notification.close()
-              } catch (e) {
-                console.log("Notification already closed")
-              }
-            }
-
-            notification.onshow = () => {
-              console.log("Notification shown successfully")
-            }
-
-            notification.onerror = (error) => {
-              console.error("Notification error:", error)
+              notification.close()
             }
           } catch (error) {
             console.error("Error creating notification:", error)
           }
-        } else {
-          console.log("Notification permission not granted:", Notification.permission)
         }
       }
     },
@@ -520,27 +484,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isReady || !loggedInUser || !chatIdsString) return
 
-    console.log("Setting up global message subscriptions for notifications:", chatIdsString)
-
     const handleChatUpdate = (payload: any) =>
       setChats((current) => current.map((c) => (c.id === payload.new.id ? { ...c, ...payload.new } : c)))
     const handleChatDelete = (payload: any) => setChats((current) => current.filter((c) => c.id !== payload.old.id))
 
-    // This subscription is ONLY for notifications and chat list updates
-    // Individual chat pages handle their own message updates
     const messageChannel = supabase
       .channel(`global-messages-${loggedInUser.id}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=in.(${chatIdsString})` },
-        (payload) => {
-          console.log("Global message subscription triggered:", payload)
-          handleNewMessage(payload as any)
-        },
+        handleNewMessage as any,
       )
-      .subscribe((status) => {
-        console.log("Global message channel subscription status:", status)
-      })
+      .subscribe()
 
     const chatsChannel = supabase
       .channel(`chats-${loggedInUser.id}`)
@@ -554,12 +509,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         { event: "DELETE", schema: "public", table: "chats", filter: `id=in.(${chatIdsString})` },
         handleChatDelete,
       )
-      .subscribe((status) => {
-        console.log("Chat channel subscription status:", status)
-      })
+      .subscribe()
 
     return () => {
-      console.log("Cleaning up global message subscriptions")
       supabase.removeChannel(messageChannel)
       supabase.removeChannel(chatsChannel)
     }
