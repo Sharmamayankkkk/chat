@@ -120,13 +120,11 @@ export default function ChatPage() {
     }
 
     const handleUpdatedMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
-      // This is a key change: Instead of re-fetching, we merge the new data.
-      // This preserves the `profiles` object and prevents the avatar from blinking.
-      setMessages((current) =>
-        current.map((m) =>
-          m.id === payload.new.id ? { ...m, ...payload.new } : m,
-        ),
-      )
+      // To prevent blinking, we fetch the full message data to ensure profiles are included
+      const fullMessage = await fetchFullMessage(payload.new.id)
+      if (fullMessage) {
+        setMessages((current) => current.map((m) => (m.id === fullMessage.id ? fullMessage : m)))
+      }
     }
 
     const handleDeletedMessage = (payload: RealtimePostgresChangesPayload<{ id: number }>) => {
