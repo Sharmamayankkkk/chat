@@ -398,6 +398,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             newReactions[reactionKey] = reactors;
         }
 
+        // Optimistic update
         setMessages(prev => prev.map(m => m.id === message.id ? { ...m, reactions: newReactions } : m));
 
         const { error } = await supabase
@@ -406,6 +407,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             .eq('id', message.id);
         
         if (error) {
+            // Revert on error
             setMessages(prev => prev.map(m => m.id === message.id ? { ...m, reactions: originalReactions } : m));
             toast({ variant: 'destructive', title: 'Error updating reaction', description: error.message });
         }
@@ -588,6 +590,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         const originalIsStarred = messageToStar.is_starred;
         const newIsStarred = !originalIsStarred;
 
+        // Optimistic update
         setMessages(prev => prev.map(m => 
             m.id === messageToStar.id ? { ...m, is_starred: newIsStarred } : m
         ));
@@ -598,6 +601,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             .eq('id', messageToStar.id);
         
         if (error) {
+            // Revert on error
             setMessages(prev => prev.map(m => 
                 m.id === messageToStar.id ? { ...m, is_starred: originalIsStarred } : m
             ));
