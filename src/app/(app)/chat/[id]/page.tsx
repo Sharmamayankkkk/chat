@@ -22,7 +22,7 @@ function ChatPageLoading() {
 }
 
 export default function ChatPage() {
-  const params = useParams<{ id: string }>()
+  const params = useParams<{ id:string }>()
   const searchParams = useSearchParams()
   const highlightMessageId = searchParams.get("highlight")
 
@@ -108,9 +108,14 @@ export default function ChatPage() {
   )
 
   useEffect(() => {
-    if (!isAppReady || !supabase || !params.id) return
+    if (!isAppReady || !supabase || !params.id || !loggedInUser) return
 
     const handleNewMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
+      // Ignore messages from the current user because they are added optimistically.
+      if (payload.new.user_id === loggedInUser.id) {
+        return
+      }
+
       const fullMessage = await fetchFullMessage(payload.new.id)
       if (fullMessage) {
         setMessages((current) =>
@@ -155,7 +160,7 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [params.id, supabase, isAppReady, fetchFullMessage])
+  }, [params.id, supabase, isAppReady, fetchFullMessage, loggedInUser])
 
   if (isInitialLoading) {
     return <ChatPageLoading />

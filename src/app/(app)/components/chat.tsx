@@ -74,10 +74,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         themeSettings, 
         allUsers, 
         dmRequests, 
-        blockedUsers,
-        reportUser,
-        blockUser,
-        unblockUser,
+        sendDmRequest,
+        leaveGroup,
+        deleteGroup,
     } = useAppContext();
     const [message, setMessage] = useState('');
     const [caption, setCaption] = useState('');
@@ -147,6 +146,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         isChannel && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin,
     [chat, loggedInUser.id, isChannel]);
 
+    const { blockedUsers, blockUser, unblockUser, reportUser } = useAppContext();
     const isChatPartnerBlocked = useMemo(() => {
         if (!chatPartner) return false;
         return blockedUsers.includes(chatPartner.id);
@@ -257,7 +257,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             let finalContent = contentToSave ?? content;
             let finalAttachmentMetadata = attachmentMetadata;
             
-            const { error } = await supabase
+            const { data: newMessage, error } = await supabase
                 .from('messages')
                 .insert({
                     chat_id: chat.id,
@@ -267,11 +267,16 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                     attachment_metadata: finalAttachmentMetadata,
                     reply_to_message_id: replyingTo?.id,
                 })
-                .select('*, profiles(*)')
+                .select('*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))')
                 .single();
 
             if (error) throw error;
             
+            // Optimistic update
+            if (newMessage) {
+                setMessages(current => [...current, newMessage as Message]);
+            }
+
             setMessage('');
             setCaption('');
             setReplyingTo(null);
@@ -299,7 +304,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                 size: 0 
             };
     
-            const { error } = await supabase
+            const { data: newMessage, error } = await supabase
                 .from('messages')
                 .insert({
                     chat_id: chat.id,
@@ -309,10 +314,15 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                     attachment_metadata: attachmentMetadata,
                     reply_to_message_id: replyingTo?.id,
                 })
-                .select('*, profiles(*)')
+                .select('*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))')
                 .single();
     
             if (error) throw error;
+
+            if (newMessage) {
+                setMessages(current => [...current, newMessage as Message]);
+            }
+            
             setReplyingTo(null);
             setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     
