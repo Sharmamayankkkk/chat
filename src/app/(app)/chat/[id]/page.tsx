@@ -30,54 +30,47 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
-  // Use a ref to ensure the supabase client is stable across renders.
   const supabase = useRef(createClient()).current
 
-  // Fetch the initial chat and message data.
   const fetchFullChatData = useCallback(
     async (chatId: string) => {
       setIsLoading(true)
+      try {
+        const { data: chatData, error: chatError } = await supabase
+          .from("chats")
+          .select(`*, participants:participants!chat_id(*, profiles!user_id(*))`)
+          .eq("id", chatId)
+          .single()
 
-      const { data: chatData, error: chatError } = await supabase
-        .from("chats")
-        .select(`*, participants:participants!chat_id(*, profiles!user_id(*))`)
-        .eq("id", chatId)
-        .single()
+        if (chatError || !chatData) throw chatError
 
-      if (chatError || !chatData) {
-        console.error(`Error fetching chat ${chatId}:`, chatError)
-        setLocalChat(null)
-        setIsLoading(false)
-        return
-      }
+        const { data: messagesData, error: messagesError } = await supabase
+          .from("messages")
+          .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
+          .eq("chat_id", chatId)
+          .order("created_at", { ascending: true })
 
-      const { data: messagesData, error: messagesError } = await supabase
-        .from("messages")
-        .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
-        .eq("chat_id", chatId)
-        .order("created_at", { ascending: true })
+        if (messagesError) throw messagesError
 
-      if (messagesError) {
-        console.error(`Error fetching messages for chat ${chatId}:`, messagesError)
-        setMessages([])
-      } else {
         setMessages(messagesData as unknown as Message[])
+        setLocalChat(chatData as unknown as Chat)
+      } catch (error) {
+        console.error("Error fetching chat data:", error)
+        setLocalChat(null)
+        setMessages([])
+      } finally {
+        setIsLoading(false)
       }
-
-      setLocalChat(chatData as unknown as Chat)
-      setIsLoading(false)
     },
-    [supabase], // supabase is stable, so this function is stable.
+    [supabase],
   )
 
-  // Trigger initial data fetch when component mounts or chat ID changes.
   useEffect(() => {
     if (isAppReady && loggedInUser && params.id) {
       fetchFullChatData(params.id)
     }
   }, [params.id, isAppReady, loggedInUser, fetchFullChatData])
 
-  // Mark messages as read when chat is opened or focused.
   useEffect(() => {
     if (supabase && params.id && loggedInUser?.id) {
       const markAsRead = async () => {
@@ -87,107 +80,82 @@ export default function ChatPage() {
         })
         resetUnreadCount(Number(params.id))
       }
-
       markAsRead()
-      const focusListener = () => {
-        if (document.hasFocus()) {
-          markAsRead()
-        }
-      }
+      const focusListener = () => document.hasFocus() && markAsRead()
       window.addEventListener("focus", focusListener)
-      return () => {
-        window.removeEventListener("focus", focusListener)
-      }
+      return () => window.removeEventListener("focus", focusListener)
     }
   }, [params.id, loggedInUser?.id, supabase, resetUnreadCount])
 
-  // Define stable handlers for real-time events.
   const handleNewMessage = useCallback(
-    (payload: RealtimePostgresChangesPayload<{ id: number }>) => {
-      const newMessageId = payload.new.id
-
-      // Fetch the complete message from the DB to ensure all relations (profiles, replies) are correctly loaded.
-      // This is more robust than trying to build the object on the client.
-      const fetchSingleMessage = async (messageId: number) => {
-        try {
-          const { data, error } = await supabase
-            .from("messages")
-            .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
-            .eq("id", messageId)
-            .single()
-
-          if (error) throw error
-
-          if (data) {
-            setMessages((current) => {
-              if (current.some((m) => m.id === data.id)) return current // Prevent duplicates
-              return [...current, data as Message]
-            })
-          }
-        } catch (error) {
-          console.error("Error fetching single new message:", error)
+    async (payload: RealtimePostgresChangesPayload<{ id: number }>) => {
+      try {
+        const { data, error } = await supabase
+          .from("messages")
+          .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
+          .eq("id", payload.new.id)
+          .single()
+        if (error) throw error
+        if (data) {
+          setMessages((current) => (current.some((m) => m.id === data.id) ? current : [...current, data as Message]))
         }
+      } catch (error) {
+        console.error("Error fetching new message in real-time:", error)
       }
-      fetchSingleMessage(newMessageId)
     },
     [supabase],
   )
 
-  const handleUpdatedMessage = useCallback((payload: RealtimePostgresChangesPayload<Message>) => {
-    const updatedMessage = payload.new
-    setMessages((current) =>
-      current.map((m) => {
-        if (m.id === updatedMessage.id) {
-          // Merge updates, preserving existing profile/reply data if the payload is partial.
-          return { ...m, ...updatedMessage }
+  const handleUpdatedMessage = useCallback(
+    async (payload: RealtimePostgresChangesPayload<Message>) => {
+       try {
+        const { data, error } = await supabase
+          .from("messages")
+          .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
+          .eq("id", payload.new.id)
+          .single()
+        if (error) throw error
+        if (data) {
+           setMessages((current) => current.map((m) => m.id === data.id ? data as Message : m))
         }
-        return m
-      }),
-    )
-  }, [])
+      } catch (error) {
+        console.error("Error fetching updated message in real-time:", error)
+      }
+    },
+    [supabase],
+  )
 
   const handleDeletedMessage = useCallback((payload: RealtimePostgresChangesPayload<{ id: number }>) => {
-    const deletedMessageId = payload.old.id
-    if (deletedMessageId) {
-      setMessages((current) => current.filter((m) => m.id !== deletedMessageId))
-    }
+    setMessages((current) => current.filter((m) => m.id !== payload.old.id))
   }, [])
 
-  // The main effect for setting up the real-time subscription.
   useEffect(() => {
     if (!isAppReady || !supabase || !params.id) return
-
-    // Use a unique channel name for each chat page instance.
     const channel = supabase
       .channel(`chat-room-${params.id}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${params.id}` },
-        handleNewMessage,
+        handleNewMessage as any,
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "messages", filter: `chat_id=eq.${params.id}` },
-        handleUpdatedMessage,
+        handleUpdatedMessage as any,
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "messages", filter: `chat_id=eq.${params.id}` },
-        handleDeletedMessage,
+        handleDeletedMessage as any,
       )
       .subscribe((status, err) => {
-        if (err) {
-          console.error(`Subscription error for chat ${params.id}:`, err)
-        }
+        if (err) console.error(`Subscription error for chat ${params.id}:`, err)
       })
-
-    // Cleanup function to remove the subscription when the component unmounts or dependencies change.
     return () => {
       supabase.removeChannel(channel)
     }
   }, [params.id, supabase, isAppReady, handleNewMessage, handleUpdatedMessage, handleDeletedMessage])
 
-  // Render logic
   if ((isLoading && !localChat) || !isAppReady) {
     return <ChatPageLoading />
   }
