@@ -1,4 +1,4 @@
-# Krishna Connect
+ad# Krishna Connect
 *Where Devotees Unite*
 
 In the spirit of selfless service and shared wisdom, Krishna Connect offers a sacred digital space for our community to come together. It's more than just a chat app; it's a platform for fostering satsang, sharing inspiration, and strengthening our connection to Krishna and to each other.
