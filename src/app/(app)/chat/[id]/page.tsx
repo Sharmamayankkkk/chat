@@ -30,7 +30,6 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(true)
   
-  // Use a ref to hold the supabase client instance, ensuring it's stable.
   const supabase = useRef(createClient()).current
   
   const fetchFullChatData = useCallback(
@@ -75,7 +74,6 @@ export default function ChatPage() {
     }
   }, [params.id, isAppReady, loggedInUser, fetchFullChatData])
 
-  // Mark messages as read and reset local unread count
   useEffect(() => {
     if (supabase && params.id && loggedInUser?.id) {
       const markAsRead = async () => {
@@ -102,7 +100,6 @@ export default function ChatPage() {
   const handleNewMessage = useCallback((payload: RealtimePostgresChangesPayload<Message>) => {
     const newMessage = payload.new as Message
     
-    // Find sender info from the already-loaded `allUsers` list from context
     const sender = allUsers.find(u => u.id === newMessage.user_id)
     const messageWithProfile: Message = { 
       ...newMessage, 
@@ -110,12 +107,10 @@ export default function ChatPage() {
     };
 
     setMessages((currentMessages) => {
-      // Prevent duplicates
       if (currentMessages.some((m) => m.id === messageWithProfile.id)) {
         return currentMessages
       }
       
-      // If it's a reply, find the message it's replying to in the current state
       if (messageWithProfile.reply_to_message_id) {
           const repliedTo = currentMessages.find(m => m.id === messageWithProfile.reply_to_message_id);
           if (repliedTo) {
@@ -140,9 +135,7 @@ export default function ChatPage() {
     }
   }, []);
 
-  // Real-time subscriptions for this specific chat
   useEffect(() => {
-    // Ensure we have everything needed before subscribing
     if (!isAppReady || !supabase || !params.id) return
 
     const channel = supabase
@@ -168,7 +161,6 @@ export default function ChatPage() {
         }
       })
     
-    // Cleanup subscription on component unmount or when chatId changes
     return () => {
       supabase.removeChannel(channel)
     }
