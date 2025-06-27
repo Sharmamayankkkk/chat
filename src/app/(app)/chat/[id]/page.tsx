@@ -22,7 +22,7 @@ function ChatPageLoading() {
 }
 
 export default function ChatPage() {
-  const params = useParams<{ id: string }>()
+  const params = useParams<{ id:string }>()
   const searchParams = useSearchParams()
   const highlightMessageId = searchParams.get("highlight")
 

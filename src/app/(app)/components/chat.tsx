@@ -116,12 +116,20 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
 
     useEffect(() => {
         fetch('/api/assets')
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error(`Failed to fetch assets: ${res.statusText}`);
+                }
+                return res.json();
+            })
             .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
                 setStickerList(data.stickers || []);
                 setCustomEmojiList(data.emojis || []);
             })
-            .catch(err => console.error("Failed to load assets", err));
+            .catch(err => console.error("Failed to load assets:", err));
     }, []);
 
     const supabase = createClient();

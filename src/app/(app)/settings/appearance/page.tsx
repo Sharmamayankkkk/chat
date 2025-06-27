@@ -58,16 +58,19 @@ export default function ChatAppearancePage() {
         setIsLoadingWallpapers(true);
         try {
             const response = await fetch('/api/wallpapers');
+            if (!response.ok) {
+                throw new Error(`Failed to fetch wallpapers: ${response.statusText}`);
+            }
             const data = await response.json();
-            if (response.ok && data.wallpapers) {
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            if (data.wallpapers) {
                 const uniqueWallpapers = [...new Set(['/chat-bg.png', ...data.wallpapers])];
                 setWallpapers(uniqueWallpapers);
-            } else {
-                toast({ variant: 'destructive', title: 'Could not load wallpapers' });
             }
         } catch (error) {
-            toast({ variant: 'destructive', title: 'Error fetching wallpapers' });
-            console.error(error);
+            toast({ variant: 'destructive', title: 'Error fetching wallpapers', description: String(error) });
         } finally {
             setIsLoadingWallpapers(false);
         }
