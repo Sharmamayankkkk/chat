@@ -1,3 +1,4 @@
+
 "use client"
 
 import { notFound, useParams, useSearchParams } from "next/navigation"
@@ -25,7 +26,7 @@ export default function ChatPage() {
   const searchParams = useSearchParams()
   const highlightMessageId = searchParams.get("highlight")
 
-  const { loggedInUser, allUsers, isReady: isAppReady, resetUnreadCount } = useAppContext()
+  const { loggedInUser, isReady: isAppReady, resetUnreadCount } = useAppContext()
   const [localChat, setLocalChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [isInitialLoading, setIsInitialLoading] = useState(true)
@@ -119,7 +120,7 @@ export default function ChatPage() {
     }
 
     const handleUpdatedMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
-      // For updates, we can just merge the new data with the existing message
+       // For updates, we can just merge the new data with the existing message
       // This preserves the profile picture and prevents flickering
       setMessages((current) =>
         current.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)),
