@@ -33,6 +33,7 @@ export default function ChatPage() {
 
   const supabase = useRef(createClient()).current
 
+  // This function is now stable and does not depend on component state.
   const fetchFullChatData = useCallback(
     async (chatId: string) => {
       try {
@@ -62,7 +63,8 @@ export default function ChatPage() {
     },
     [supabase],
   )
-
+  
+  // This effect handles the INITIAL loading state. It only runs when the chat ID changes.
   useEffect(() => {
     if (isAppReady && loggedInUser && params.id) {
       setIsLoading(true)
