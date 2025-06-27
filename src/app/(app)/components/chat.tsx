@@ -883,11 +883,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
 
     const ReplyPreview = ({ repliedTo }: { repliedTo: Message }) => (
         <div
-            className="flex items-center gap-2 p-2 mb-2 rounded-md cursor-pointer border-l-2"
-            style={{
-                backgroundColor: 'rgba(0,0,0,0.1)',
-                borderColor: themeSettings.usernameColor,
-            }}
+            className="flex items-center gap-2 p-2 mb-2 rounded-md cursor-pointer border-l-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+            style={{ borderColor: themeSettings.usernameColor }}
             onClick={() => jumpToMessage(repliedTo.id)}
         >
             <div className="flex-1 overflow-hidden">
@@ -895,7 +892,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                     {repliedTo.profiles.name}
                 </p>
                 <p className="text-xs truncate opacity-80">
-                    {repliedTo.content || 'Attachment'}
+                    {repliedTo.content || (repliedTo.attachment_metadata?.name || 'Attachment')}
                 </p>
             </div>
         </div>
@@ -1239,7 +1236,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                 <div className="flex items-center justify-between p-2 pl-3 mb-2 rounded-t-md bg-muted text-sm border-b">
                     <div>
                         <p className="font-semibold text-primary">Replying to {replyingTo.profiles.name}</p>
-                        <p className="text-muted-foreground truncate max-w-xs">{replyingTo.content || 'Attachment'}</p>
+                        <p className="text-muted-foreground truncate max-w-xs">{replyingTo.content || (replyingTo.attachment_metadata?.name || 'Attachment')}</p>
                     </div>
                     <Button variant="ghost" size="icon" onClick={() => setReplyingTo(null)} className="h-7 w-7"><X className="h-4 w-4"/></Button>
                 </div>
