@@ -5,7 +5,7 @@ import { notFound, useParams, useSearchParams } from "next/navigation"
 import { Chat as ChatUI } from "../../components/chat"
 import { useAppContext } from "@/providers/app-provider"
 import { Icons } from "@/components/icons"
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { createClient } from "@/lib/utils"
 import type { Chat, Message } from "@/lib/types"
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js"
@@ -26,11 +26,13 @@ export default function ChatPage() {
   const searchParams = useSearchParams()
   const highlightMessageId = searchParams.get("highlight")
 
-  const { loggedInUser, isReady: isAppReady, resetUnreadCount } = useAppContext()
+  const { loggedInUser, isReady: isAppReady, resetUnreadCount, allUsers } = useAppContext()
   const [localChat, setLocalChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const supabase = createClient()
+  const channelRef = useRef<any>(null);
+
 
   const fetchFullChatData = useCallback(
     async (chatId: string) => {
@@ -97,56 +99,50 @@ export default function ChatPage() {
       }
     }
   }, [params.id, loggedInUser, supabase, resetUnreadCount])
-
-  const handleNewMessage = useCallback(
-    (payload: RealtimePostgresChangesPayload<Message>) => {
-      const newMessageId = payload.new.id
-      if (!newMessageId) return
-
-      const fetchAndAddMessage = async (id: number) => {
-        const { data: fullMessageData, error } = await supabase
-          .from("messages")
-          .select(`*, profiles(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
-          .eq("id", id)
-          .single()
-
-        if (error) {
-          console.error("Error fetching full new message:", error)
-          return
-        }
-
-        if (fullMessageData) {
-          setMessages((currentMessages) => {
-            if (currentMessages.some((m) => m.id === fullMessageData.id)) {
-              return currentMessages
-            }
-            return [...currentMessages, fullMessageData as unknown as Message]
-          })
-        }
-      }
-
-      fetchAndAddMessage(newMessageId)
-    },
-    [supabase],
-  )
-
-  const handleUpdatedMessage = useCallback((payload: RealtimePostgresChangesPayload<Message>) => {
-    const updatedMessage = payload.new
-    setMessages((current) =>
-      current.map((m) => (m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m)),
-    )
-  }, [])
-
-  const handleDeletedMessage = useCallback((payload: RealtimePostgresChangesPayload<Message>) => {
-    const deletedMessageId = (payload.old as Message)?.id
-    if (deletedMessageId) {
-      setMessages((current) => current.filter((m) => m.id !== deletedMessageId))
-    }
-  }, [])
-
+  
   // Real-time subscriptions
   useEffect(() => {
-    if (!isAppReady || !supabase || !params.id) return
+    if (!isAppReady || !supabase || !params.id || channelRef.current) return
+
+    const handleNewMessage = (payload: RealtimePostgresChangesPayload<Message>) => {
+      const newMessage = payload.new as Message;
+      const sender = allUsers.find(u => u.id === newMessage.user_id);
+
+      if (!sender) {
+        console.warn("Sender not found for new message:", newMessage.user_id);
+        return;
+      }
+      
+      const messageWithProfile: Message = { ...newMessage, profiles: sender, replied_to_message: null };
+
+      setMessages((currentMessages) => {
+        if (currentMessages.some((m) => m.id === messageWithProfile.id)) {
+          return currentMessages;
+        }
+        if (messageWithProfile.reply_to_message_id) {
+            const repliedTo = currentMessages.find(m => m.id === messageWithProfile.reply_to_message_id);
+            if (repliedTo) {
+                messageWithProfile.replied_to_message = repliedTo;
+            }
+        }
+        return [...currentMessages, messageWithProfile];
+      });
+    };
+
+    const handleUpdatedMessage = (payload: RealtimePostgresChangesPayload<Message>) => {
+      const updatedMessage = payload.new;
+      setMessages((current) =>
+        current.map((m) => (m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m)),
+      )
+    };
+
+    const handleDeletedMessage = (payload: RealtimePostgresChangesPayload<Message>) => {
+      const deletedMessageId = (payload.old as Message)?.id
+      if (deletedMessageId) {
+        setMessages((current) => current.filter((m) => m.id !== deletedMessageId))
+      }
+    };
+
 
     const channel = supabase
       .channel(`chat-${params.id}`)
@@ -170,11 +166,16 @@ export default function ChatPage() {
           console.error(`Subscription error for chat ${params.id}:`, err)
         }
       })
+    
+    channelRef.current = channel;
 
     return () => {
-      supabase.removeChannel(channel)
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     }
-  }, [params.id, supabase, isAppReady, handleNewMessage, handleUpdatedMessage, handleDeletedMessage])
+  }, [params.id, supabase, isAppReady, allUsers])
 
   if ((isLoading && !localChat) || !isAppReady) {
     return <ChatPageLoading />
