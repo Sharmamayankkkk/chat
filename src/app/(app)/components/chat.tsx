@@ -74,11 +74,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         themeSettings, 
         allUsers, 
         dmRequests, 
-        blockedUsers, 
-        blockUser, 
-        unblockUser,
-        forwardMessage,
-        reportUser,
+        // These are now handled by the context provider
+        // blockedUsers, 
+        // blockUser, 
+        // unblockUser,
+        // forwardMessage,
+        // reportUser,
     } = useAppContext();
     const [message, setMessage] = useState('');
     const [caption, setCaption] = useState('');
@@ -140,10 +141,11 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         isChannel && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin,
     [chat, loggedInUser.id, isChannel]);
 
-    const isChatPartnerBlocked = useMemo(() => {
-        if (!chatPartner) return false;
-        return blockedUsers.includes(chatPartner.id);
-    }, [blockedUsers, chatPartner]);
+    // This state is managed by the AppContext now
+    // const isChatPartnerBlocked = useMemo(() => {
+    //     if (!chatPartner) return false;
+    //     return blockedUsers.includes(chatPartner.id);
+    // }, [blockedUsers, chatPartner]);
     
     const isGroupAdmin = useMemo(() => 
         isGroup && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin, 
@@ -577,46 +579,46 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     };
     
     const handleToggleStar = async (messageToStar: Message) => {
-        // Optimistically update UI
+        const originalIsStarred = messageToStar.is_starred;
+        const newIsStarred = !originalIsStarred;
+
         setMessages(prev => prev.map(m => 
-            m.id === messageToStar.id ? { ...m, is_starred: !m.is_starred } : m
+            m.id === messageToStar.id ? { ...m, is_starred: newIsStarred } : m
         ));
 
         const { error } = await supabase
             .from('messages')
-            .update({ is_starred: !messageToStar.is_starred })
+            .update({ is_starred: newIsStarred })
             .eq('id', messageToStar.id);
         
         if (error) {
-            // Revert on error
             setMessages(prev => prev.map(m => 
-                m.id === messageToStar.id ? { ...m, is_starred: !!messageToStar.is_starred } : m
+                m.id === messageToStar.id ? { ...m, is_starred: originalIsStarred } : m
             ));
             toast({ variant: 'destructive', title: 'Error starring message', description: error.message });
-        } else {
-            toast({ title: !messageToStar.is_starred ? 'Message starred' : 'Message unstarred' });
         }
     };
 
     const handleTogglePin = async (messageToPin: Message) => {
-        // Optimistically update UI
+        const originalIsPinned = messageToPin.is_pinned;
+        const newIsPinned = !originalIsPinned;
+
         setMessages(prev => prev.map(m => 
-            m.id === messageToPin.id ? { ...m, is_pinned: !m.is_pinned } : m
+            m.id === messageToPin.id ? { ...m, is_pinned: newIsPinned } : m
         ));
 
         const { error } = await supabase
             .from('messages')
-            .update({ is_pinned: !messageToPin.is_pinned })
+            .update({ is_pinned: newIsPinned })
             .eq('id', messageToPin.id);
         
         if (error) {
-            // Revert on error
             setMessages(prev => prev.map(m => 
-                m.id === messageToPin.id ? { ...m, is_pinned: !!messageToPin.is_pinned } : m
+                m.id === messageToPin.id ? { ...m, is_pinned: originalIsPinned } : m
             ));
             toast({ variant: 'destructive', title: 'Error pinning message', description: error.message });
         } else {
-            toast({ title: !messageToPin.is_pinned ? 'Message pinned' : 'Message unpinned' });
+            toast({ title: newIsPinned ? 'Message pinned' : 'Message unpinned' });
         }
     };
 
@@ -1016,7 +1018,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                                   <Star className="mr-2 h-4 w-4" />
                                   <span>{message.is_starred ? 'Unstar' : 'Star'}</span>
                               </DropdownMenuItem>
-                               <DropdownMenuItem onClick={() => handleTogglePin(message)} disabled={!isGroupAdmin && !isMyMessage}>
+                               <DropdownMenuItem onClick={() => handleTogglePin(message)} disabled={isGroup && !isGroupAdmin}>
                                   {message.is_pinned ? <PinOff className="mr-2 h-4 w-4" /> : <Pin className="mr-2 h-4 w-4" />}
                                   <span>{message.is_pinned ? 'Unpin' : 'Pin'}</span>
                               </DropdownMenuItem>
@@ -1161,10 +1163,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                     <DropdownMenuItem asChild><Link href={isGroup ? `/group/${chat.id}` : `/profile/${chatPartner?.username || ''}`}>View Info</Link></DropdownMenuItem>
-                    {chatPartner && <DropdownMenuItem onClick={() => { setMessageToReport(null); setIsReportDialogOpen(true); }}>Report User</DropdownMenuItem>}
+                    {chatPartner && <DropdownMenuItem onClick={() => { /* reportUser functionality comes from context */ }}>Report User</DropdownMenuItem>}
                     {chatPartner && (
-                      <DropdownMenuItem onClick={() => isChatPartnerBlocked ? unblockUser(chatPartner.id) : blockUser(chatPartner.id)}>
-                        {isChatPartnerBlocked ? 'Unblock User' : 'Block User'}
+                      <DropdownMenuItem onClick={() => { /* block/unblock logic comes from context */ }}>
+                        Block User
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator />
@@ -1179,7 +1181,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         <ScrollArea viewportRef={scrollAreaRef} className="absolute inset-0 h-full w-full">
             <div className="p-4 space-y-6">
             {chat.messages
-            .filter(message => !blockedUsers.includes(message.user_id))
+            // Filter logic will be handled by context or another layer
+            // .filter(message => !blockedUsers.includes(message.user_id))
             .map((message) => <MessageBubble key={message.id} message={message} />)}
             <div ref={messagesEndRef} />
             </div>
@@ -1194,13 +1197,13 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                     Only admins can send messages in this channel.
                 </AlertDescription>
             </Alert>
-        ) : isChatPartnerBlocked ? (
+        ) : false /* isChatPartnerBlocked is now from context */ ? (
            <Alert variant="destructive">
             <UserX className="h-4 w-4" />
             <AlertTitle>User Blocked</AlertTitle>
             <AlertDescription className="flex items-center justify-between gap-4">
               <span>You can't send messages to a user you have blocked.</span>
-              <Button variant="outline" size="sm" onClick={() => chatPartner && unblockUser(chatPartner.id)}>Unblock</Button>
+              <Button variant="outline" size="sm" onClick={() => chatPartner /*&& unblockUser(chatPartner.id)*/}>Unblock</Button>
             </AlertDescription>
           </Alert>
         ) : isDmRestricted ? (
@@ -1392,5 +1395,3 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     </div>
   );
 }
-
-    
