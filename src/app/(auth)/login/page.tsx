@@ -13,7 +13,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Icons } from '@/components/icons';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Terminal, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import React, { useState } from 'react';
@@ -21,6 +21,7 @@ import { createClient } from '@/lib/utils';
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -38,16 +39,18 @@ export default function LoginPage() {
     if (error) {
       setError(error.message);
     } else {
-      router.push('/chat');
-      router.refresh(); // Important to re-fetch server-side data
+      const next = searchParams.get('next');
+      router.push(next || '/chat');
+      router.refresh(); 
     }
   };
 
   const handleOAuthLogin = async (provider: 'google' | 'facebook') => {
+    const next = searchParams.get('next');
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/auth/callback${next ? `?next=${encodeURIComponent(next)}` : ''}`,
       },
     });
     if (error) {
