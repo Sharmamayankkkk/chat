@@ -896,21 +896,21 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     const senderFallback = (senderName || 'U').charAt(0);
 
     const ReplyPreview = ({ repliedTo }: { repliedTo: Message }) => (
-        <div
-            className="flex items-center gap-2 p-2 mb-2 rounded-md cursor-pointer border-l-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
-            style={{ borderColor: themeSettings.usernameColor }}
-            onClick={() => jumpToMessage(repliedTo.id)}
-        >
-            <div className="flex-1 overflow-hidden">
-                <p className="font-semibold text-sm truncate" style={{ color: themeSettings.usernameColor }}>
-                    {repliedTo.profiles.name}
-                </p>
-                <p className="text-xs truncate opacity-80">
-                    {repliedTo.content || (repliedTo.attachment_metadata?.name || 'Attachment')}
-                </p>
-            </div>
-        </div>
-    );
+      <div
+          className="flex items-center gap-2 p-2 mb-2 rounded-md cursor-pointer border-l-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+          style={{ borderColor: themeSettings.usernameColor }}
+          onClick={() => jumpToMessage(repliedTo.id)}
+      >
+          <div className="flex-1 overflow-hidden">
+              <p className="font-semibold text-sm truncate" style={{ color: themeSettings.usernameColor }}>
+                  {repliedTo.profiles.name}
+              </p>
+              <p className="text-xs truncate opacity-80" style={{ color: bubbleStyle.color, opacity: 0.8 }}>
+                  {repliedTo.content || (repliedTo.attachment_metadata?.name || 'Attachment')}
+              </p>
+          </div>
+      </div>
+  );
     
     return (
       <div key={message.id} id={`message-${message.id}`} className={cn(
