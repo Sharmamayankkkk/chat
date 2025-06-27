@@ -401,10 +401,13 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         // Optimistic update
         setMessages(prev => prev.map(m => m.id === message.id ? { ...m, reactions: newReactions } : m));
 
+        // Call the new RPC function
         const { error } = await supabase
-            .from('messages')
-            .update({ reactions: newReactions })
-            .eq('id', message.id);
+            .rpc('handle_reaction', {
+                p_message_id: message.id,
+                p_user_id: loggedInUser.id,
+                p_emoji: emoji
+            });
         
         if (error) {
             // Revert on error
