@@ -31,7 +31,6 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isInitialLoading, setIsInitialLoading] = useState(true)
 
-  // Use a ref for Supabase client to ensure stability across re-renders
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
 
@@ -58,26 +57,23 @@ export default function ChatPage() {
         setLocalChat(chatData as unknown as Chat)
       } catch (error) {
         console.error("Error fetching chat data:", error)
-        setLocalChat(null) // Reset on error
+        setLocalChat(null)
         setMessages([])
       } finally {
-        // This should only be set to false on the very first load
         if (isInitialLoading) {
           setIsInitialLoading(false)
         }
       }
     },
-    [supabase, isInitialLoading], // Keep isInitialLoading dependency to control the one-time loading state
+    [supabase, isInitialLoading],
   )
 
-  // Effect for the initial data load
   useEffect(() => {
     if (isAppReady && loggedInUser) {
       fetchFullChatData(params.id)
     }
   }, [params.id, isAppReady, loggedInUser?.id, fetchFullChatData])
 
-  // Effect for marking messages as read
   useEffect(() => {
     if (supabase && params.id && loggedInUser?.id) {
       const markAsRead = async () => {
@@ -94,7 +90,6 @@ export default function ChatPage() {
     }
   }, [params.id, loggedInUser?.id, supabase, resetUnreadCount])
 
-  // Helper function to fetch a single, complete message object
   const fetchFullMessage = useCallback(
     async (messageId: number) => {
       const { data: fullMessageData, error } = await supabase
@@ -112,11 +107,9 @@ export default function ChatPage() {
     [supabase],
   )
 
-  // Real-time subscription setup
   useEffect(() => {
     if (!isAppReady || !supabase || !params.id) return
 
-    // Handler for new messages
     const handleNewMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
       const fullMessage = await fetchFullMessage(payload.new.id)
       if (fullMessage) {
@@ -126,15 +119,16 @@ export default function ChatPage() {
       }
     }
 
-    // Handler for updated messages
     const handleUpdatedMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
-      const fullMessage = await fetchFullMessage(payload.new.id)
-      if (fullMessage) {
-        setMessages((current) => current.map((m) => (m.id === fullMessage.id ? fullMessage : m)))
-      }
+      // This is a key change: Instead of re-fetching, we merge the new data.
+      // This preserves the `profiles` object and prevents the avatar from blinking.
+      setMessages((current) =>
+        current.map((m) =>
+          m.id === payload.new.id ? { ...m, ...payload.new } : m,
+        ),
+      )
     }
 
-    // Handler for deleted messages
     const handleDeletedMessage = (payload: RealtimePostgresChangesPayload<{ id: number }>) => {
       setMessages((current) => current.filter((m) => m.id !== payload.old.id))
     }
@@ -163,7 +157,7 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [params.id, supabase, isAppReady, fetchFullMessage]) // Add fetchFullMessage to dependencies
+  }, [params.id, supabase, isAppReady, fetchFullMessage])
 
   if (isInitialLoading) {
     return <ChatPageLoading />
