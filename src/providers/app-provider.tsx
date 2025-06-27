@@ -405,34 +405,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const currentChatId = pathname.split("/chat/")[1]
       const isChatOpen = String(newMessage.chat_id) === currentChatId
-      
-      // If the chat is open, the chat page component will handle it.
-      // This provider should only handle updates for INACTIVE chats.
-      if (isChatOpen) {
-          return;
-      }
-      
       const isWindowFocused = document.hasFocus()
 
-      setChats((currentChats) =>
-        currentChats.map((c) => {
-          if (c.id === newMessage.chat_id) {
-            const newUnreadCount = (c.unreadCount || 0) + 1;
-            return {
-              ...c,
-              last_message_content: newMessage.attachment_url
-                ? newMessage.attachment_metadata?.name || "Sent an attachment"
-                : newMessage.content,
-              last_message_timestamp: newMessage.created_at,
-              unreadCount: newUnreadCount,
+      // Only update sidebar and show notification for INACTIVE chats.
+      // The active chat page will handle its own updates.
+      if (!isChatOpen) {
+        setChats((currentChats) =>
+          currentChats.map((c) => {
+            if (c.id === newMessage.chat_id) {
+              const newUnreadCount = (c.unreadCount || 0) + 1
+              return {
+                ...c,
+                last_message_content: newMessage.attachment_url
+                  ? newMessage.attachment_metadata?.name || "Sent an attachment"
+                  : newMessage.content,
+                last_message_timestamp: newMessage.created_at,
+                unreadCount: newUnreadCount,
+              }
             }
-          }
-          return c
-        }),
-      )
+            return c
+          }),
+        )
+      }
 
-      // Show notification if window is not focused
-      if (!isWindowFocused) {
+      // Show notification if chat is not open or window is not focused
+      if (!isChatOpen || !isWindowFocused) {
         if (Notification.permission === "granted") {
           const sender = allUsers.find((u) => u.id === newMessage.user_id)
           if (!sender || blockedUsers.includes(sender.id)) {
