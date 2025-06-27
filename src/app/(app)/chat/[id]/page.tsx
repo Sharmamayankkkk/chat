@@ -34,9 +34,7 @@ export default function ChatPage() {
 
   const fetchFullChatData = useCallback(
     async (chatId: string) => {
-      if (!localChat) {
-        setIsLoading(true)
-      }
+      setIsLoading(true)
 
       const { data: chatData, error: chatError } = await supabase
         .from("chats")
@@ -67,7 +65,7 @@ export default function ChatPage() {
       setLocalChat(chatData as unknown as Chat)
       setIsLoading(false)
     },
-    [supabase, localChat],
+    [supabase],
   )
 
   useEffect(() => {
@@ -139,11 +137,10 @@ export default function ChatPage() {
             });
         });
       } else {
-        console.warn("Sender profile not found, refetching chat data");
-        fetchFullChatData(params.id);
+        console.warn("Sender profile not found for new message:", newMessage.user_id);
       }
     },
-    [allUsers, fetchFullChatData, params.id, supabase]
+    [allUsers, supabase]
   );
   
   // Real-time subscriptions
