@@ -71,48 +71,75 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const fetchInitialData = useCallback(async (session: Session) => {
     setIsInitializing(true);
     try {
-      const { user } = session;
-      const [
-        { data: profile, error: profileError },
-        { data: allUsersData, error: usersError },
-        { data: dmRequestsData, error: dmError },
-        { data: blockedData, error: blockedError },
-        { data: chatParticipants, error: participantError },
-      ] = await Promise.all([
-        supabaseRef.current.from("profiles").select("*").eq("id", user.id).single(),
-        supabaseRef.current.from("profiles").select("*"),
-        supabaseRef.current.from("dm_requests").select("*, from:profiles!from_user_id(*), to:profiles!to_user_id(*)").or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`),
-        supabaseRef.current.from("blocked_users").select("blocked_user_id").eq("user_id", user.id),
-        supabaseRef.current.from("participants").select("chat_id").eq("user_id", user.id),
-      ]);
+        const { user } = session;
 
-      if (profileError) throw profileError;
+        // Fetch non-chat-specific data first
+        const [
+            { data: profile, error: profileError },
+            { data: allUsersData, error: usersError },
+            { data: dmRequestsData, error: dmError },
+            { data: blockedData, error: blockedError },
+            { data: unreadData, error: unreadError },
+            { data: chatParticipants, error: participantError },
+        ] = await Promise.all([
+            supabaseRef.current.from("profiles").select("*").eq("id", user.id).single(),
+            supabaseRef.current.from("profiles").select("*"),
+            supabaseRef.current.from("dm_requests").select("*, from:profiles!from_user_id(*), to:profiles!to_user_id(*)").or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`),
+            supabaseRef.current.from("blocked_users").select("blocked_user_id").eq("user_id", user.id),
+            supabaseRef.current.rpc("get_unread_counts", { p_user_id: user.id }),
+            supabaseRef.current.from("participants").select("chat_id").eq("user_id", user.id),
+        ]);
 
-      const fullUserProfile = { ...profile, email: user.email } as User;
-      setLoggedInUser(fullUserProfile);
-      setAllUsers((allUsersData as User[]) || []);
-      setDmRequests((dmRequestsData as DmRequest[]) || []);
-      setBlockedUsers(blockedData?.map(b => b.blocked_user_id) || []);
-      
-      const chatIds = chatParticipants?.map(p => p.chat_id) || [];
-      if (chatIds.length > 0) {
-        const { data: chatsData, error: chatListError } = await supabaseRef.current
-          .rpc('get_chats_with_unread_counts', { p_user_id: user.id });
+        if (profileError) throw profileError;
 
-        if (!chatListError) {
-          const mappedChats = (chatsData || []).map((chat: any) => ({
-            ...chat,
-            participants: chat.participants_data, // Use the pre-joined participant data
-            messages: [],
-            unreadCount: chat.unread_count,
-            last_message_content: chat.last_message_content,
-            last_message_timestamp: chat.last_message_timestamp,
-          }));
-          setChats(sortChats(mappedChats as any));
+        const fullUserProfile = { ...profile, email: user.email } as User;
+        setLoggedInUser(fullUserProfile);
+        setAllUsers((allUsersData as User[]) || []);
+        setDmRequests((dmRequestsData as DmRequest[]) || []);
+        setBlockedUsers(blockedData?.map(b => b.blocked_user_id) || []);
+
+        // Now fetch chats
+        const chatIds = chatParticipants?.map(p => p.chat_id) || [];
+        if (chatIds.length > 0) {
+            const { data: chatsData, error: chatListError } = await supabaseRef.current
+                .from("chats")
+                .select(`*, participants:participants!chat_id(*, profiles!user_id(*))`)
+                .in("id", chatIds);
+            
+            if (chatListError) throw chatListError;
+
+            const unreadMap = new Map<number, number>();
+            if (unreadData && !unreadError) {
+                (unreadData as any[]).forEach((item: any) => {
+                    unreadMap.set(item.chat_id_result, item.unread_count_result);
+                });
+            }
+
+            const mappedChats = (chatsData || []).map((chat) => ({
+                ...chat,
+                messages: [],
+                unreadCount: unreadMap.get(chat.id) || 0,
+            }));
+
+            // We need to fetch the last message for each chat to sort correctly
+            const lastMessagePromises = chatIds.map(id => 
+                supabaseRef.current.from('messages').select('content, created_at, attachment_url').eq('chat_id', id).order('created_at', { ascending: false }).limit(1).single()
+            );
+            const lastMessagesResults = await Promise.all(lastMessagePromises);
+
+            const finalChats = mappedChats.map((chat, index) => {
+                const lastMessage = lastMessagesResults[index].data;
+                return {
+                    ...chat,
+                    last_message_content: lastMessage?.content || (lastMessage?.attachment_url ? 'Attachment' : null),
+                    last_message_timestamp: lastMessage?.created_at,
+                }
+            })
+
+            setChats(sortChats(finalChats as any));
+        } else {
+            setChats([]);
         }
-      } else {
-        setChats([]);
-      }
       
       await requestNotificationPermission();
     } catch (error: any) {
