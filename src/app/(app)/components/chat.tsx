@@ -646,10 +646,13 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             ...chat.participants.map(p => p.profiles)
         ];
 
-        return all.filter(u => 
-            (u.username && u.username.toLowerCase().includes(mentionQuery)) ||
-            (u.name && u.name.toLowerCase().includes(mentionQuery))
-        );
+        return all.filter(u => {
+            if (!u) return false;
+            const query = mentionQuery.toLowerCase();
+            const usernameMatch = (u.username || '').toLowerCase().includes(query);
+            const nameMatch = (u.name || '').toLowerCase().includes(query);
+            return usernameMatch || nameMatch;
+        });
     }, [mentionQuery, chat.participants, isGroup]);
 
     const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {

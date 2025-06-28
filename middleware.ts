@@ -60,28 +60,22 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const { pathname } = request.nextUrl
+  const publicRoutes = ['/login', '/signup', '/forgot-password', '/update-password', '/auth/callback'];
+  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
 
-  // Define routes that are always public
-  const publicRoutes = ['/login', '/signup', '/forgot-password', '/update-password', '/auth/callback']
-  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
+  // If the user is not logged in and the route is not public, redirect to login
+  if (!user && !isPublicRoute) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.searchParams.set('next', pathname)
+    return NextResponse.redirect(url)
+  }
 
-  // Define auth routes that a logged-in user should be redirected away from
-  const authRoutes = ['/login', '/signup']
-  const isAuthRoute = authRoutes.some(route => pathname.startsWith(route))
-
-  if (user) {
-    // If user is logged in and tries to access an auth route, redirect to chat
-    if (isAuthRoute) {
-      return NextResponse.redirect(new URL('/chat', request.url))
-    }
-  } else {
-    // If user is not logged in and tries to access a protected route
-    if (!isPublicRoute) {
-      // Redirect to login, but keep the original path as a query param for redirection after login
-      const redirectUrl = new URL('/login', request.url)
-      redirectUrl.searchParams.set('next', pathname)
-      return NextResponse.redirect(redirectUrl)
-    }
+  // If the user is logged in and tries to access login/signup, redirect to chat
+  const authRoutes = ['/login', '/signup'];
+  const isAuthRoute = authRoutes.some(route => pathname.startsWith(route));
+  if (user && isAuthRoute) {
+    return NextResponse.redirect(new URL('/chat', request.url))
   }
 
   return response
