@@ -5,7 +5,7 @@ import { notFound, useParams, useSearchParams } from "next/navigation"
 import { Chat as ChatUI } from "../../components/chat"
 import { useAppContext } from "@/providers/app-provider"
 import { Icons } from "@/components/icons"
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import { createClient } from "@/lib/utils"
 import type { Chat, Message } from "@/lib/types"
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js"
@@ -28,7 +28,7 @@ export default function ChatPage() {
   const searchParams = useSearchParams()
   const highlightMessageId = searchParams.get("highlight")
 
-  const { loggedInUser, isReady: isAppReady, resetUnreadCount } = useAppContext()
+  const { loggedInUser, isReady: isAppReady, resetUnreadCount, chats } = useAppContext()
   const [localChat, setLocalChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [isInitialLoading, setIsInitialLoading] = useState(true)
@@ -39,6 +39,12 @@ export default function ChatPage() {
   const supabase = supabaseRef.current
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const topMessageSentinelRef = useRef<HTMLDivElement>(null)
+
+  const initialUnreadCount = useMemo(() => {
+    if (!isAppReady || !params.id) return 0;
+    const chatInList = chats.find(c => c.id === Number(params.id));
+    return chatInList?.unreadCount || 0;
+  }, [isAppReady, params.id, chats]);
 
   const fetchChatAndInitialMessages = useCallback(
     async (chatId: string) => {
@@ -187,13 +193,15 @@ export default function ChatPage() {
     if (!isAppReady || !supabase || !params.id || !loggedInUser) return
 
     const handleNewMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
-      if (payload.new.user_id === loggedInUser.id) return
-
       const fullMessage = await fetchFullMessage(payload.new.id)
       if (fullMessage) {
-        setMessages((current) =>
-          current.some((m) => m.id === fullMessage.id) ? current : [...current, fullMessage],
-        )
+        const isOptimistic = typeof fullMessage.id === 'string' && fullMessage.id.startsWith('temp-');
+        // Only add if it's not our own optimistic message, or if it's a confirmed one replacing an optimistic one
+        if (fullMessage.user_id !== loggedInUser.id || isOptimistic) {
+            setMessages((current) =>
+                current.some((m) => m.id === fullMessage.id) ? current : [...current, fullMessage],
+            )
+        }
       }
     }
 
@@ -251,6 +259,7 @@ export default function ChatPage() {
       hasMoreMessages={hasMore}
       topMessageSentinelRef={topMessageSentinelRef}
       scrollContainerRef={scrollContainerRef}
+      initialUnreadCount={initialUnreadCount}
     />
   )
 }

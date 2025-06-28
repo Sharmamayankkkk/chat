@@ -6,7 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { v4 as uuidv4 } from 'uuid';
 import { useSwipeable } from 'react-swipeable';
-import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock } from 'lucide-react';
+import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock, CircleSlash } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,6 +55,7 @@ interface ChatProps {
   hasMoreMessages: boolean;
   topMessageSentinelRef: React.RefObject<HTMLDivElement>;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
+  initialUnreadCount?: number;
 }
 
 function formatBytes(bytes: number, decimals = 2) {
@@ -72,7 +73,10 @@ const formatRecordingTime = (seconds: number) => {
     return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
 };
 
-export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLoadingMore, hasMoreMessages, topMessageSentinelRef, scrollContainerRef }: ChatProps) {
+const DELETED_MESSAGE_MARKER = '[[MSG_DELETED]]';
+const SYSTEM_MESSAGE_PREFIX = '[[SYS:';
+
+export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLoadingMore, hasMoreMessages, topMessageSentinelRef, scrollContainerRef, initialUnreadCount }: ChatProps) {
     const { toast } = useToast();
     const { 
         themeSettings, 
@@ -259,7 +263,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         let attachmentUrl: string | null = null;
         let attachmentMetadata: AttachmentMetadata | null = null;
         
-        const tempId = Date.now();
+        const tempId = `temp-${uuidv4()}`;
         const newMessageObject: Message = {
           id: tempId,
           created_at: new Date().toISOString(),
@@ -340,7 +344,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         if (isSending) return;
         
         setIsSending(true);
-        const tempId = Date.now();
+        const tempId = `temp-${uuidv4()}`;
         const isSticker = stickerUrl.includes('/stickers/');
         const attachmentMetadata: AttachmentMetadata = { 
             name: isSticker ? 'sticker.webp' : 'emoji.png', 
@@ -411,8 +415,26 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     };
 
     const handleDeleteForEveryone = async (messageId: number) => {
-        const { error } = await supabase.from('messages').delete().eq('id', messageId);
+        const originalMessage = chat.messages.find(m => m.id === messageId);
+        if (!originalMessage) return;
+
+        // Optimistic update
+        const updatedMessage = { ...originalMessage, content: DELETED_MESSAGE_MARKER, attachment_url: null, attachment_metadata: null, reactions: null };
+        setMessages(prev => prev.map(m => m.id === messageId ? updatedMessage : m));
+
+        const { error } = await supabase
+            .from('messages')
+            .update({ 
+                content: DELETED_MESSAGE_MARKER, 
+                attachment_url: null, 
+                attachment_metadata: null, 
+                reactions: null,
+                is_edited: false
+            })
+            .eq('id', messageId);
+
         if (error) {
+            setMessages(prev => prev.map(m => m.id === messageId ? originalMessage : m)); // Revert
             toast({ variant: 'destructive', title: "Error deleting message", description: error.message });
         }
     };
@@ -662,6 +684,17 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         }
     };
     
+    const sendSystemMessage = async (text: string) => {
+        const { error } = await supabase.from('messages').insert({
+            chat_id: chat.id,
+            user_id: loggedInUser.id,
+            content: `${SYSTEM_MESSAGE_PREFIX}${text}]]`
+        });
+        if (error) {
+            toast({ variant: 'destructive', title: "Error sending system message", description: error.message });
+        }
+    };
+
     const handleToggleStar = async (messageToStar: Message) => {
         const originalIsStarred = messageToStar.is_starred;
         const newIsStarred = !originalIsStarred;
@@ -708,6 +741,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             ));
             toast({ variant: 'destructive', title: 'Error pinning message', description: error.message });
         } else {
+            if (newIsPinned) {
+                sendSystemMessage(`📌 ${loggedInUser.name} pinned a message.`);
+            }
             toast({ title: newIsPinned ? 'Message pinned' : 'Message unpinned' });
         }
     };
@@ -734,7 +770,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         const isMyMessage = message.user_id === loggedInUser.id;
         if (!isMyMessage) return null;
         
-        if (typeof message.id === 'number' && message.id > 1_000_000_000) {
+        if (typeof message.id === 'string' && message.id.startsWith('temp-')) {
           return 'pending';
         }
 
@@ -965,7 +1001,69 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
       )
     }
 
+    const messagesWithSeparator = useMemo(() => {
+        if (!initialUnreadCount || initialUnreadCount <= 0 || initialUnreadCount >= chat.messages.length) {
+          return chat.messages;
+        }
+    
+        const unreadIndex = chat.messages.length - initialUnreadCount;
+        const newMessages: any[] = [...chat.messages];
+        newMessages.splice(unreadIndex, 0, { id: 'unread-separator', type: 'unread_separator' });
+        return newMessages;
+    }, [chat.messages, initialUnreadCount]);
+
+    const UnreadSeparator = () => (
+        <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-red-500" />
+            </div>
+            <div className="relative flex justify-center">
+                <span className="bg-red-500 px-3 text-xs font-medium text-white rounded-full">
+                    Unread Messages
+                </span>
+            </div>
+        </div>
+    );
+
+    const SystemMessage = ({ content }: { content: string }) => {
+        const parsedContent = content.replace(SYSTEM_MESSAGE_PREFIX, '').replace(']]', '');
+        const icon = parsedContent.startsWith('📌') ? <Pin className="inline-block h-3 w-3 mr-1.5" /> : null;
+        
+        return (
+            <div className="text-center text-xs text-muted-foreground my-3">
+                <span className="bg-muted px-2.5 py-1.5 rounded-full">
+                    {icon}
+                    {parsedContent.replace('📌 ', '')}
+                </span>
+            </div>
+        );
+    }
+  
   const MessageBubble = ({ message }: { message: Message }) => {
+    if (message.content && message.content.startsWith(SYSTEM_MESSAGE_PREFIX)) {
+        return <SystemMessage content={message.content} />;
+    }
+    
+    if (message.content === DELETED_MESSAGE_MARKER) {
+        const isMyMessage = message.user_id === loggedInUser.id;
+        const bubbleStyle = isMyMessage ? outgoingBubbleStyle : incomingBubbleStyle;
+        return (
+            <div className={cn("flex items-end gap-2 group/message", isMyMessage ? "justify-end" : "justify-start")}>
+                 {!isMyMessage && <div className="w-8" />}
+                 <div
+                    className="relative max-w-[85%] sm:max-w-md lg:max-w-lg rounded-lg text-sm px-2 sm:px-3 py-2"
+                    style={bubbleStyle}
+                 >
+                    <div className="flex items-center gap-2 italic text-current/70">
+                        <CircleSlash className="h-4 w-4" />
+                        <span>This message was deleted</span>
+                    </div>
+                </div>
+                 {isMyMessage && <div className="w-8" />}
+            </div>
+        );
+    }
+
     const isMyMessage = message.user_id === loggedInUser.id;
     const sender = message.profiles;
     const isEditing = editingMessage?.id === message.id;
@@ -1287,9 +1385,15 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     </div>
                   )}
                 </div>
-                {chat.messages
-                .filter(message => !blockedUsers.includes(message.user_id))
-                .map((message) => <MessageBubble key={message.id} message={message} />)}
+                {messagesWithSeparator
+                .filter(message => !('user_id' in message) || !blockedUsers.includes(message.user_id))
+                .map((item) => {
+                    if ('type' in item && item.type === 'unread_separator') {
+                        return <UnreadSeparator key="unread-separator" />;
+                    }
+                    const message = item as Message;
+                    return <MessageBubble key={message.id} message={message} />
+                })}
                 <div ref={messagesEndRef} />
             </div>
         </ScrollArea>
