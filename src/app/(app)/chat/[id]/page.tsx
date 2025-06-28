@@ -36,25 +36,26 @@ export default function ChatPage() {
   const [hasMore, setHasMore] = useState(true)
 
   const supabaseRef = useRef(createClient())
-  const supabase = supabaseRef.current
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const topMessageSentinelRef = useRef<HTMLDivElement>(null)
+  
+  const chatId = Number(params.id);
 
   const initialUnreadCount = useMemo(() => {
-    if (!isAppReady || !params.id) return 0;
-    const chatInList = chats.find(c => c.id === Number(params.id));
+    if (!isAppReady || !chatId) return 0;
+    const chatInList = chats.find(c => c.id === chatId);
     return chatInList?.unreadCount || 0;
-  }, [isAppReady, params.id, chats]);
+  }, [isAppReady, chatId, chats]);
 
   const fetchChatAndInitialMessages = useCallback(
-    async (chatId: string) => {
+    async (id: number) => {
       if (!loggedInUser?.id) return;
       setIsInitialLoading(true);
       try {
-        const { data: chatData, error: chatError } = await supabase
+        const { data: chatData, error: chatError } = await supabaseRef.current
           .from("chats")
           .select(`*, participants:participants!chat_id(*, profiles!user_id(*))`)
-          .eq("id", chatId)
+          .eq("id", id)
           .single()
 
         if (chatError || !chatData) throw chatError
@@ -66,10 +67,10 @@ export default function ChatPage() {
         
         setLocalChat(chatData as unknown as Chat)
 
-        const { data: messagesData, error: messagesError } = await supabase
+        const { data: messagesData, error: messagesError } = await supabaseRef.current
           .from("messages")
           .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
-          .eq("chat_id", chatId)
+          .eq("chat_id", id)
           .order("created_at", { ascending: false })
           .limit(MESSAGES_PER_PAGE)
 
@@ -85,7 +86,7 @@ export default function ChatPage() {
         setIsInitialLoading(false)
       }
     },
-    [supabase, loggedInUser?.id],
+    [loggedInUser?.id],
   )
 
   const loadMoreMessages = useCallback(async () => {
@@ -99,10 +100,10 @@ export default function ChatPage() {
     }
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = await supabaseRef.current
         .from("messages")
         .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
-        .eq("chat_id", params.id)
+        .eq("chat_id", chatId)
         .lt("created_at", oldestMessage.created_at)
         .order("created_at", { ascending: false })
         .limit(MESSAGES_PER_PAGE)
@@ -128,13 +129,13 @@ export default function ChatPage() {
     } finally {
       setIsLoadingMore(false)
     }
-  }, [isLoadingMore, hasMore, messages, supabase, params.id])
+  }, [isLoadingMore, hasMore, messages, chatId])
 
   useEffect(() => {
-    if (isAppReady && loggedInUser) {
-      fetchChatAndInitialMessages(params.id)
+    if (isAppReady && loggedInUser?.id) {
+      fetchChatAndInitialMessages(chatId)
     }
-  }, [params.id, isAppReady, loggedInUser?.id, fetchChatAndInitialMessages])
+  }, [chatId, isAppReady, loggedInUser?.id, fetchChatAndInitialMessages])
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -159,24 +160,24 @@ export default function ChatPage() {
   }, [loadMoreMessages])
 
   useEffect(() => {
-    if (supabase && params.id && loggedInUser?.id && messages.length > 0) {
+    if (chatId && loggedInUser?.id && messages.length > 0) {
       const markAsRead = async () => {
-        await supabase.rpc("mark_messages_as_read", {
-          chat_id_param: Number(params.id),
+        await supabaseRef.current.rpc("mark_messages_as_read", {
+          chat_id_param: chatId,
           user_id_param: loggedInUser.id,
         })
-        resetUnreadCount(Number(params.id))
+        resetUnreadCount(chatId)
       }
       markAsRead()
       const focusListener = () => document.hasFocus() && markAsRead()
       window.addEventListener("focus", focusListener)
       return () => window.removeEventListener("focus", focusListener)
     }
-  }, [params.id, loggedInUser?.id, supabase, resetUnreadCount, messages])
+  }, [chatId, loggedInUser?.id, resetUnreadCount, messages.length])
 
   const fetchFullMessage = useCallback(
     async (messageId: number) => {
-      const { data: fullMessageData, error } = await supabase
+      const { data: fullMessageData, error } = await supabaseRef.current
         .from("messages")
         .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
         .eq("id", messageId)
@@ -188,13 +189,14 @@ export default function ChatPage() {
       }
       return fullMessageData as Message
     },
-    [supabase],
+    [],
   )
 
   useEffect(() => {
-    if (!isAppReady || !supabase || !params.id || !loggedInUser?.id) return;
+    if (!isAppReady || !chatId || !loggedInUser?.id) return;
 
     const handleNewMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
+      // Ignore own messages because they are added optimistically
       if (payload.new.user_id === loggedInUser.id) {
         return;
       }
@@ -218,31 +220,17 @@ export default function ChatPage() {
       setMessages((current) => current.filter((m) => m.id !== payload.old.id))
     }
 
-    const channel = supabase
-      .channel(`chat-room-${params.id}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${params.id}` },
-        handleNewMessage as any,
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "messages", filter: `chat_id=eq.${params.id}` },
-        handleUpdatedMessage as any,
-      )
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "messages", filter: `chat_id=eq.${params.id}` },
-        handleDeletedMessage as any,
-      )
-      .subscribe((status, err) => {
-        if (err) console.error(`Subscription error for chat ${params.id}:`, err)
-      })
+    const channel = supabaseRef.current
+      .channel(`chat-room-${chatId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` }, handleNewMessage as any)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` }, handleUpdatedMessage as any)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` }, handleDeletedMessage as any)
+      .subscribe();
 
     return () => {
-      supabase.removeChannel(channel)
+      supabaseRef.current.removeChannel(channel)
     }
-  }, [params.id, supabase, isAppReady, fetchFullMessage, loggedInUser?.id]);
+  }, [chatId, isAppReady, fetchFullMessage, loggedInUser?.id]);
 
   if (isInitialLoading) {
     return <ChatPageLoading />
