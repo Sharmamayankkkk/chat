@@ -1,4 +1,3 @@
-
 "use client"
 
 import { createContext, useContext, useState, type ReactNode, useEffect, useCallback, useMemo, useRef } from "react"
@@ -165,39 +164,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [supabase, toast, requestNotificationPermission, isInitializing],
   )
 
+  // Initialize app and handle auth state changes
   useEffect(() => {
     let mounted = true
+
+    // Load theme settings
     try {
       const savedSettings = localStorage.getItem("themeSettings")
-      if (savedSettings) setThemeSettingsState(JSON.parse(savedSettings))
+      if (savedSettings) {
+        setThemeSettingsState(JSON.parse(savedSettings))
+      }
     } catch (error) {
       console.error("Could not load theme settings:", error)
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
 
-      setSession(session);
-      if (event === "SIGNED_IN" && session && !initialSessionProcessed.current) {
-        initialSessionProcessed.current = true;
-        await fetchInitialData(session);
-      } else if (event === "SIGNED_OUT") {
-        initialSessionProcessed.current = false;
-        setLoggedInUser(null);
-        setChats([]);
-        setAllUsers([]);
-        setDmRequests([]);
-        setEvents([]);
-        setBlockedUsers([]);
+      // Set session for other components that might need it.
+      setSession(session)
+      
+      // This condition handles both a new login and a returning user's session.
+      // The `initialSessionProcessed` ref ensures we only fetch data once on startup.
+      if (session && !initialSessionProcessed.current) {
+        initialSessionProcessed.current = true
+        await fetchInitialData(session)
+      } 
+      // This handles a logout or an initial state with no session.
+      else if (!session) {
+        initialSessionProcessed.current = false
+        setLoggedInUser(null)
+        setChats([])
+        setAllUsers([])
+        setDmRequests([])
+        setEvents([])
+        setBlockedUsers([])
       }
-      if (mounted) setIsReady(true);
+
+      // Crucially, we only mark the app as "ready" after we have processed
+      // the auth state, preventing premature redirects.
+      if (mounted) {
+        setIsReady(true)
+      }
     })
 
     return () => {
-      mounted = false;
-      subscription.unsubscribe();
+      mounted = false
+      subscription.unsubscribe()
     }
-  }, [supabase, fetchInitialData, toast, router])
+  }, [supabase, fetchInitialData, toast])
 
   const handleNewMessage = useCallback(
     (payload: RealtimePostgresChangesPayload<Message>) => {
