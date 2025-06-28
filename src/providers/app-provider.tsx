@@ -93,7 +93,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const fetchInitialData = useCallback(
     async (session: Session) => {
-      setIsInitializing(true)
+      // Prevent re-fetching if we are already fetching for the same user
+      if (isInitializing && loggedInUser?.id === session.user.id) return;
+      setIsInitializing(true);
+      
       try {
         const { user } = session
         const [
@@ -113,7 +116,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ])
 
         if (profileError || !profile) {
-          console.error("Error fetching profile:", profileError)
           await supabase.auth.signOut()
           throw new Error("Could not fetch user profile")
         }
@@ -170,7 +172,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setIsReady(true);
       }
     },
-    [supabase, toast, requestNotificationPermission],
+    [supabase, toast, requestNotificationPermission, isInitializing, loggedInUser?.id],
   )
 
   // Initialize app and handle auth state changes
@@ -189,9 +191,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!mounted) return;
         setSession(session);
         
-        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-            if (session) await fetchInitialData(session);
-        } else if (event === 'SIGNED_OUT') {
+        if (session) {
+            await fetchInitialData(session);
+        } else {
             setLoggedInUser(null);
             setChats([]);
             setAllUsers([]);
@@ -404,7 +406,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  if (isInitializing) {
+  if (!isReady && isInitializing) {
     return <AppLoading />
   }
 
