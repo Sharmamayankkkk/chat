@@ -190,20 +190,26 @@ export default function ChatPage() {
   )
 
   useEffect(() => {
-    if (!isAppReady || !supabase || !params.id || !loggedInUser) return
+    if (!isAppReady || !supabase || !params.id || !loggedInUser) return;
 
     const handleNewMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
-      const fullMessage = await fetchFullMessage(payload.new.id)
-      if (fullMessage) {
-        const isOptimistic = typeof fullMessage.id === 'string' && fullMessage.id.startsWith('temp-');
-        // Only add if it's not our own optimistic message, or if it's a confirmed one replacing an optimistic one
-        if (fullMessage.user_id !== loggedInUser.id || isOptimistic) {
-            setMessages((current) =>
-                current.some((m) => m.id === fullMessage.id) ? current : [...current, fullMessage],
-            )
-        }
+      // This handler is primarily for messages from other users.
+      // The sender's own message is added optimistically in Chat.tsx.
+      if (payload.new.user_id === loggedInUser.id) {
+        return;
       }
-    }
+      
+      const fullMessage = await fetchFullMessage(payload.new.id);
+      if (fullMessage) {
+        setMessages((current) => {
+          // Avoid adding duplicates
+          if (current.some((m) => m.id === fullMessage.id)) {
+            return current;
+          }
+          return [...current, fullMessage];
+        });
+      }
+    };
 
     const handleUpdatedMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
       setMessages((current) =>
@@ -239,7 +245,7 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [params.id, supabase, isAppReady, fetchFullMessage, loggedInUser])
+  }, [params.id, supabase, isAppReady, fetchFullMessage, loggedInUser]);
 
   if (isInitialLoading) {
     return <ChatPageLoading />

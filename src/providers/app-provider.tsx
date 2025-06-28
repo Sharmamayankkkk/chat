@@ -182,16 +182,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 setSession(session);
                 await fetchInitialData(session);
             }
-            // Whether there is a session or not, the check is complete.
-            // The app is now ready to either show content or the login page.
             setIsReady(true);
         }
     };
 
     initializeSession();
 
-    // The listener now primarily handles events that happen *after* initial load,
-    // like signing in or out from another tab.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!mounted) return;
@@ -218,40 +214,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const handleNewMessage = useCallback(
     (payload: RealtimePostgresChangesPayload<Message>) => {
-      if (!loggedInUser) return
+      if (!loggedInUser) return;
 
-      const newMessage = payload.new as Message
-      if (newMessage.user_id === loggedInUser.id) return
+      const newMessage = payload.new as Message;
+      const isMyMessage = newMessage.user_id === loggedInUser.id;
 
-      const openChatId = pathnameRef.current.split("/chat/")[1];
-      const isChatOpen = String(newMessage.chat_id) === openChatId;
-      const isWindowFocused = document.hasFocus();
-
-      // Update chat list with unread count and last message
+      // Update chat list state for ALL new messages to update last message and re-order
       setChats((currentChats) =>
         currentChats.map((c) => {
           if (c.id === newMessage.chat_id) {
-            const shouldIncreaseUnread = !isChatOpen || !isWindowFocused;
+            // Only increment unread count if it's not my message and chat isn't open/focused
+            const openChatId = pathnameRef.current.split("/chat/")[1];
+            const isChatOpen = String(newMessage.chat_id) === openChatId;
+            const isWindowFocused = document.hasFocus();
+            const shouldIncreaseUnread = !isMyMessage && (!isChatOpen || !isWindowFocused);
+
             return {
               ...c,
-              unreadCount: shouldIncreaseUnread ? (c.unreadCount || 0) + 1 : c.unreadCount,
               last_message_content: newMessage.attachment_url
                 ? newMessage.attachment_metadata?.name || "Sent an attachment"
                 : newMessage.content,
               last_message_timestamp: newMessage.created_at,
-            }
+              unreadCount: shouldIncreaseUnread ? (c.unreadCount || 0) + 1 : c.unreadCount,
+            };
           }
-          return c
-        }),
-      )
+          return c;
+        })
+      );
       
+      // Handle notifications only for messages from others
+      if (isMyMessage) return;
+
+      const openChatId = pathnameRef.current.split("/chat/")[1];
+      const isChatOpen = String(newMessage.chat_id) === openChatId;
+      const isWindowFocused = document.hasFocus();
       const shouldShowNotification = Notification.permission === "granted" && (!isChatOpen || !isWindowFocused);
 
       if (shouldShowNotification) {
-        const sender = allUsers.find((u) => u.id === newMessage.user_id)
+        const sender = allUsers.find((u) => u.id === newMessage.user_id);
         if (sender) {
-          const title = sender.name || "New Message"
-          const body = newMessage.content || (newMessage.attachment_metadata?.name ? `Sent: ${newMessage.attachment_metadata.name}` : "Sent an attachment")
+          const title = sender.name || "New Message";
+          const body = newMessage.content || (newMessage.attachment_metadata?.name ? `Sent: ${newMessage.attachment_metadata.name}` : "Sent an attachment");
           
           const notification = new Notification(title, {
               body: body,
@@ -267,8 +270,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [loggedInUser, allUsers, router],
-  )
+    [loggedInUser, allUsers, router]
+  );
   
   const chatIdsString = useMemo(() => chats.map((c) => c.id).sort().join(","), [chats])
 
