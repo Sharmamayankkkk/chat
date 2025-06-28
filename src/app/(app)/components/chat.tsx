@@ -144,7 +144,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     }, [scrollContainerRef]);
 
     useEffect(() => {
-        if (initialUnreadCount > 0 && chat.messages.length > 0) {
+        if (initialUnreadCount > 0 && chat.messages.length > 0 && loggedInUser?.username) {
             const unreadMessages = chat.messages.slice(-initialUnreadCount);
             const mentionRegex = new RegExp(`@${loggedInUser.username}|@everyone`, 'i');
             
@@ -154,7 +154,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 setFirstUnreadMentionId(firstMention.id);
             }
         }
-    }, [initialUnreadCount, chat.messages, loggedInUser.username]);
+    }, [initialUnreadCount, chat.messages, loggedInUser?.username]);
 
     useEffect(() => {
         fetch('/api/assets')
@@ -254,29 +254,32 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
     useEffect(() => {
       const scrollContainer = scrollContainerRef.current;
-      if (!scrollContainer) return;
+      if (!scrollContainer || !messagesEndRef.current) return;
     
       const highlightedElement = highlightMessageId ? document.getElementById(`message-${highlightMessageId}`) : null;
 
       if (highlightedElement) {
-        jumpToMessage(highlightMessageId as number);
-        hasScrolledOnLoad.current = true; // A highlight counts as an initial scroll
+        jumpToMessage(highlightMessageId);
         return;
       }
       
-      // On initial load, scroll to the bottom instantly
-      if (!hasScrolledOnLoad.current && chat.messages.length > 0) {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      // On initial render, always scroll to bottom
+      if (!hasScrolledOnLoad.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
         hasScrolledOnLoad.current = true;
-        return;
       }
+    }, [highlightMessageId, jumpToMessage, scrollContainerRef]);
+    
+    // Smooth scroll for subsequent new messages
+    useEffect(() => {
+      const scrollContainer = scrollContainerRef.current;
+      if (!scrollContainer) return;
 
-      // For subsequent new messages, only scroll if user is already near the bottom
       const isNearBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < 200;
       if (isNearBottom) {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }
-    }, [chat.messages, highlightMessageId, jumpToMessage, scrollContainerRef]);
+    }, [chat.messages, scrollContainerRef]);
 
 
     useEffect(() => {
@@ -294,7 +297,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         
         const tempId = `temp-${uuidv4()}`;
         const newMessageObject: Message = {
-          id: tempId,
+          id: tempId as any, // Temporary ID is a string
           created_at: new Date().toISOString(),
           chat_id: chat.id,
           user_id: loggedInUser.id,
@@ -382,7 +385,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         };
 
         const newMessageObject: Message = {
-            id: tempId,
+            id: tempId as any,
             created_at: new Date().toISOString(),
             chat_id: chat.id,
             user_id: loggedInUser.id,
@@ -644,8 +647,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         ];
 
         return all.filter(u => 
-            u.username.toLowerCase().includes(mentionQuery) ||
-            u.name.toLowerCase().includes(mentionQuery)
+            (u.username && u.username.toLowerCase().includes(mentionQuery)) ||
+            (u.name && u.name.toLowerCase().includes(mentionQuery))
         );
     }, [mentionQuery, chat.participants, isGroup]);
 

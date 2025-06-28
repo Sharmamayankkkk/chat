@@ -58,43 +58,29 @@ export async function middleware(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
+
   const { pathname } = request.nextUrl
 
-  // Define routes that are accessible to everyone, even without a login.
-  const publicRoutes = [
-    "/login",
-    "/signup",
-    "/forgot-password",
-    "/update-password",
-  ]
-  
-  // Check if the current route is one of the public routes.
+  // Define routes that are always public
+  const publicRoutes = ['/login', '/signup', '/forgot-password', '/update-password', '/auth/callback']
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
 
-  // Define auth routes where a logged-in user should be redirected away.
-  const authRoutes = ["/login", "/signup", "/forgot-password"]
+  // Define auth routes that a logged-in user should be redirected away from
+  const authRoutes = ['/login', '/signup']
   const isAuthRoute = authRoutes.some(route => pathname.startsWith(route))
 
-  // If a user is logged in, redirect them away from login, signup, etc.
-  if (user && isAuthRoute) {
-    return NextResponse.redirect(new URL("/chat", request.url))
-  }
-  
-  // If a user is not logged in and is trying to access a protected route, redirect to login.
-  // A route is considered protected if it's NOT in our public list.
-  if (!user && !isPublicRoute) {
-    // The root path has its own logic below, so we exclude it here.
-    if (pathname !== "/") {
-      return NextResponse.redirect(new URL("/login", request.url))
+  if (user) {
+    // If user is logged in and tries to access an auth route, redirect to chat
+    if (isAuthRoute) {
+      return NextResponse.redirect(new URL('/chat', request.url))
     }
-  }
-
-  // Handle the root path ("/") separately.
-  if (pathname === "/") {
-    if (user) {
-      return NextResponse.redirect(new URL("/chat", request.url))
-    } else {
-      return NextResponse.redirect(new URL("/login", request.url))
+  } else {
+    // If user is not logged in and tries to access a protected route
+    if (!isPublicRoute) {
+      // Redirect to login, but keep the original path as a query param for redirection after login
+      const redirectUrl = new URL('/login', request.url)
+      redirectUrl.searchParams.set('next', pathname)
+      return NextResponse.redirect(redirectUrl)
     }
   }
 
@@ -102,5 +88,15 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - and files with extensions like svg, png, jpg, etc.
+     */
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 }
