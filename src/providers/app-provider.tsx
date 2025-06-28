@@ -11,6 +11,16 @@ import { usePathname, useRouter } from "next/navigation"
 
 const AppContext = createContext<AppContextType | undefined>(undefined)
 
+// Helper function to sort chats by the most recent message
+const sortChats = (chatArray: Chat[]) => {
+  return [...chatArray].sort((a, b) => {
+    const dateA = a.last_message_timestamp ? new Date(a.last_message_timestamp) : new Date(a.created_at);
+    const dateB = b.last_message_timestamp ? new Date(b.last_message_timestamp) : new Date(b.created_at);
+    return dateB.getTime() - dateA.getTime();
+  });
+};
+
+
 function AppLoading() {
   return (
     <div className="flex h-screen w-full items-center justify-center bg-background">
@@ -137,7 +147,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           unreadCount: unreadMap.get(chat.id) || 0,
         }))
 
-        setChats(mappedChats as unknown as Chat[])
+        setChats(sortChats(mappedChats as unknown as Chat[]))
         await requestNotificationPermission()
 
       } catch (error: any) {
@@ -219,11 +229,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const newMessage = payload.new as Message;
       const isMyMessage = newMessage.user_id === loggedInUser.id;
 
-      // Update chat list state for ALL new messages to update last message and re-order
-      setChats((currentChats) =>
-        currentChats.map((c) => {
+      setChats((currentChats) => {
+        const newChats = currentChats.map((c) => {
           if (c.id === newMessage.chat_id) {
-            // Only increment unread count if it's not my message and chat isn't open/focused
             const openChatId = pathnameRef.current.split("/chat/")[1];
             const isChatOpen = String(newMessage.chat_id) === openChatId;
             const isWindowFocused = document.hasFocus();
@@ -239,8 +247,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             };
           }
           return c;
-        })
-      );
+        });
+        return sortChats(newChats);
+      });
       
       // Handle notifications only for messages from others
       if (isMyMessage) return;
@@ -281,8 +290,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     subscriptionsRef.current.forEach((sub) => supabase.removeChannel(sub));
     subscriptionsRef.current = [];
 
-    const handleChatUpdate = (payload: RealtimePostgresChangesPayload<Chat>) => setChats((current) => current.map((c) => (c.id === payload.new.id ? { ...c, ...payload.new } : c)))
-    const handleChatDelete = (payload: RealtimePostgresChangesPayload<Chat>) => setChats((current) => current.filter((c) => c.id !== payload.old.id))
+    const handleChatUpdate = (payload: RealtimePostgresChangesPayload<Chat>) => setChats((current) => sortChats(current.map((c) => (c.id === payload.new.id ? { ...c, ...payload.new } : c))));
+    const handleChatDelete = (payload: RealtimePostgresChangesPayload<Chat>) => setChats((current) => current.filter((c) => c.id !== payload.old.id));
 
     const messageChannel = supabase.channel("new-message-notifications-provider").on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=in.(${chatIdsString})` }, handleNewMessage as any).subscribe()
     const chatsChannel = supabase.channel("chats-changes-provider").on("postgres_changes", { event: "UPDATE", schema: "public", table: "chats", filter: `id=in.(${chatIdsString})` }, handleChatUpdate as any).on("postgres_changes", { event: "DELETE", schema: "public", table: "chats", filter: `id=in.(${chatIdsString})` }, handleChatDelete as any).subscribe()
@@ -332,7 +341,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addChat = useCallback((newChat: Chat) => {
     setChats((currentChats) => {
       if (currentChats.some((c) => c.id === newChat.id)) return currentChats
-      return [newChat, ...currentChats]
+      const newChatList = [newChat, ...currentChats]
+      return sortChats(newChatList);
     })
   }, [])
 
@@ -454,7 +464,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [loggedInUser, supabase, toast, allUsers]);
 
   const resetUnreadCount = useCallback((chatId: number) => {
-    setChats((current) => current.map((c) => (c.id === chatId && c.unreadCount ? { ...c, unreadCount: 0 } : c)))
+    setChats((current) => {
+      const didChange = current.some(c => c.id === chatId && c.unreadCount && c.unreadCount > 0);
+      if (!didChange) return current;
+      return current.map((c) => (c.id === chatId ? { ...c, unreadCount: 0 } : c))
+    })
   }, [])
 
   if (!isReady) {

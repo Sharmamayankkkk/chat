@@ -60,23 +60,15 @@ export function ChatList({ chats }: ChatListProps) {
     };
   }
 
-  const sortedChats = React.useMemo(() => {
-    return [...chats].sort((a, b) => {
-      const dateA = a.last_message_timestamp ? new Date(a.last_message_timestamp) : new Date(a.created_at);
-      const dateB = b.last_message_timestamp ? new Date(b.last_message_timestamp) : new Date(b.created_at);
-      return dateB.getTime() - dateA.getTime();
-    });
-  }, [chats]);
-
   const filteredChats = React.useMemo(() => {
-    if (!searchQuery) return sortedChats;
+    if (!searchQuery) return chats; // The chats array from context is now always pre-sorted
 
     const lowercasedQuery = searchQuery.toLowerCase();
-    return sortedChats.filter(chat => {
+    return chats.filter(chat => {
       const info = getChatDisplayInfo(chat);
       return info.name.toLowerCase().includes(lowercasedQuery);
     });
-  }, [sortedChats, searchQuery, loggedInUser]);
+  }, [chats, searchQuery, loggedInUser]);
 
   return (
     <div className="flex h-full flex-col">
