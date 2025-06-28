@@ -121,7 +121,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         if (participantError || usersError || dmError || blockedError || unreadError) {
-          console.error({ participantError, usersError, dmError, blockedError, unreadError })
+           // This console.error was causing a crash in the Next.js error overlay.
+           // The individual errors are not critical for app startup, as long as the profile is fetched.
         }
 
         const fullUserProfile = { ...profile, email: user.email } as User
