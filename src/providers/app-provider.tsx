@@ -1,3 +1,4 @@
+
 "use client"
 
 import { createContext, useContext, useState, type ReactNode, useEffect, useCallback, useMemo, useRef } from "react"
@@ -42,7 +43,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Use refs to prevent infinite loops and stale closures
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
-  const initialSessionProcessed = useRef(false)
   const subscriptionsRef = useRef<any[]>([])
   const notificationPermissionRequested = useRef(false)
   const pathnameRef = useRef('')
@@ -166,55 +166,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Initialize app and handle auth state changes
   useEffect(() => {
-    let mounted = true
+    let mounted = true;
 
-    // Load theme settings
+    // Load theme settings from localStorage
     try {
-      const savedSettings = localStorage.getItem("themeSettings")
+      const savedSettings = localStorage.getItem("themeSettings");
       if (savedSettings) {
-        setThemeSettingsState(JSON.parse(savedSettings))
+        setThemeSettingsState(JSON.parse(savedSettings));
       }
     } catch (error) {
-      console.error("Could not load theme settings:", error)
+      console.error("Could not load theme settings:", error);
     }
+    
+    // Proactively get the session, which is faster and more reliable on initial load
+    const initializeSession = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (mounted) {
+            if (session) {
+                setSession(session);
+                await fetchInitialData(session);
+            }
+            // Whether there is a session or not, the check is complete.
+            // The app is now ready to either show content or the login page.
+            setIsReady(true);
+        }
+    };
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return
+    initializeSession();
 
-      // Set session for other components that might need it.
-      setSession(session)
-      
-      // This condition handles both a new login and a returning user's session.
-      // The `initialSessionProcessed` ref ensures we only fetch data once on startup.
-      if (session && !initialSessionProcessed.current) {
-        initialSessionProcessed.current = true
-        await fetchInitialData(session)
-      } 
-      // This handles a logout or an initial state with no session.
-      else if (!session) {
-        initialSessionProcessed.current = false
-        setLoggedInUser(null)
-        setChats([])
-        setAllUsers([])
-        setDmRequests([])
-        setEvents([])
-        setBlockedUsers([])
+    // The listener now primarily handles events that happen *after* initial load,
+    // like signing in or out from another tab.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (!mounted) return;
+        
+        setSession(session);
+
+        if (event === 'SIGNED_IN') {
+            await fetchInitialData(session!);
+        } else if (event === 'SIGNED_OUT') {
+            setLoggedInUser(null);
+            setChats([]);
+            setAllUsers([]);
+            setDmRequests([]);
+            setEvents([]);
+            setBlockedUsers([]);
+        }
       }
-
-      // Crucially, we only mark the app as "ready" after we have processed
-      // the auth state, preventing premature redirects.
-      if (mounted) {
-        setIsReady(true)
-      }
-    })
+    );
 
     return () => {
-      mounted = false
-      subscription.unsubscribe()
-    }
-  }, [supabase, fetchInitialData, toast])
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [supabase, fetchInitialData]);
 
   const handleNewMessage = useCallback(
     (payload: RealtimePostgresChangesPayload<Message>) => {
