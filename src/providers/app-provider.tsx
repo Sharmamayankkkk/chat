@@ -136,7 +136,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSession(session);
         if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
           await fetchInitialData(session);
-        } else if (event === 'SIGNED_OUT') {
+        } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
           setLoggedInUser(null);
           setChats([]);
           setAllUsers([]);
@@ -144,8 +144,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setBlockedUsers([]);
           setIsInitializing(false);
           setIsReady(true);
-          subscriptionsRef.current.forEach(sub => sub.unsubscribe());
-          subscriptionsRef.current = [];
+          if (subscriptionsRef.current.length > 0) {
+            subscriptionsRef.current.forEach(sub => sub.unsubscribe());
+            subscriptionsRef.current = [];
+          }
         }
       }
     );
@@ -155,7 +157,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Real-time subscriptions
   useEffect(() => {
-    if (!loggedInUser) return;
+    if (!loggedInUser) {
+      if (subscriptionsRef.current.length > 0) {
+          subscriptionsRef.current.forEach(sub => sub.unsubscribe());
+          subscriptionsRef.current = [];
+      }
+      return;
+    };
     
     // Ensure we only have one set of subscriptions running
     if (subscriptionsRef.current.length > 0) return;
