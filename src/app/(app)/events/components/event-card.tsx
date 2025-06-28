@@ -15,15 +15,28 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useToast } from '@/hooks/use-toast';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ShareEventDialog } from './share-event-dialog';
+import { createClient } from '@/lib/utils';
 
-export function EventCard({ event }: { event: Event }) {
-    const { loggedInUser, rsvpToEvent, allUsers } = useAppContext();
+export function EventCard({ event, onRsvp }: { event: Event, onRsvp: () => void }) {
+    const { loggedInUser, allUsers } = useAppContext();
     const { toast } = useToast();
+    const supabase = createClient();
     const [isShareDialogOpen, setIsShareDialogOpen] = React.useState(false);
     
-    const handleRsvp = (status: RSVPStatus) => {
-        if (loggedInUser) {
-            rsvpToEvent(event.id, status);
+    const handleRsvp = async (status: RSVPStatus) => {
+        if (!loggedInUser) return;
+        
+        const { error } = await supabase.from('event_rsvps').upsert({
+            event_id: event.id,
+            user_id: loggedInUser.id,
+            status: status
+        }, { onConflict: 'event_id, user_id' });
+
+        if (error) {
+            toast({ variant: 'destructive', title: 'Error RSVPing', description: error.message });
+        } else {
+            toast({ title: `You're now marked as ${status}!` });
+            onRsvp(); // Callback to re-fetch events
         }
     };
 

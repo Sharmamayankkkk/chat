@@ -1,15 +1,17 @@
 
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, Calendar } from 'lucide-react';
 import { useAppContext } from '@/providers/app-provider';
 import { CreateEventDialog } from './components/create-event-dialog';
 import { EventCard } from './components/event-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar } from 'lucide-react';
+import { createClient } from '@/lib/utils';
+import type { Event } from '@/lib/types';
+import { useToast } from '@/hooks/use-toast';
 
 function EventsPageLoader() {
   return (
@@ -38,8 +40,32 @@ function EventsPageLoader() {
 }
 
 export default function EventsPage() {
-    const { loggedInUser, events, isReady } = useAppContext();
+    const { loggedInUser } = useAppContext();
+    const { toast } = useToast();
+    const supabase = createClient();
+    const [events, setEvents] = useState<Event[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
+
+    const fetchEvents = React.useCallback(async () => {
+        setIsLoading(true);
+        const { data, error } = await supabase
+            .from("events")
+            .select("*, rsvps:event_rsvps(*), profiles:creator_id(*)")
+            .order('date_time', { ascending: false });
+
+        if (error) {
+            toast({ variant: 'destructive', title: 'Error fetching events', description: error.message });
+            setEvents([]);
+        } else {
+            setEvents(data as Event[]);
+        }
+        setIsLoading(false);
+    }, [supabase, toast]);
+    
+    useEffect(() => {
+        fetchEvents();
+    }, [fetchEvents]);
     
     const { upcomingEvents, pastEvents } = useMemo(() => {
         const now = new Date();
@@ -62,7 +88,7 @@ export default function EventsPage() {
 
     return (
         <>
-            {loggedInUser?.is_admin && <CreateEventDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} />}
+            {loggedInUser?.is_admin && <CreateEventDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} onEventCreated={fetchEvents} />}
             <div className="flex-1 space-y-8 p-4 md:p-8 pt-6">
                 <div className="flex items-center justify-between space-y-2">
                     <h2 className="text-3xl font-bold tracking-tight">Events</h2>
@@ -74,7 +100,7 @@ export default function EventsPage() {
                     )}
                 </div>
 
-                {!isReady ? (
+                {isLoading ? (
                     <EventsPageLoader />
                 ) : (
                     <div className="space-y-8">
@@ -82,7 +108,7 @@ export default function EventsPage() {
                             <h3 className="text-2xl font-semibold tracking-tight mb-4">Upcoming Events</h3>
                             {upcomingEvents.length > 0 ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                    {upcomingEvents.map(event => <EventCard key={event.id} event={event} />)}
+                                    {upcomingEvents.map(event => <EventCard key={event.id} event={event} onRsvp={fetchEvents} />)}
                                 </div>
                             ) : (
                                 <Card className="flex flex-col items-center justify-center p-12 text-center">
@@ -100,7 +126,7 @@ export default function EventsPage() {
                             <h3 className="text-2xl font-semibold tracking-tight mb-4">Past Events</h3>
                              {pastEvents.length > 0 ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                    {pastEvents.map(event => <EventCard key={event.id} event={event} />)}
+                                    {pastEvents.map(event => <EventCard key={event.id} event={event} onRsvp={fetchEvents} />)}
                                 </div>
                             ) : (
                                 <p className="text-sm text-muted-foreground">No past events to show.</p>

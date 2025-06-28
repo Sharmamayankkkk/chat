@@ -12,11 +12,12 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { notFound } from 'next/navigation';
-import type { RSVPStatus } from '@/lib/types';
+import type { Event, RSVPStatus } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { CreateEventDialog } from '../components/create-event-dialog';
 import { ShareEventDialog } from '../components/share-event-dialog';
+import { createClient } from '@/lib/utils';
 
 function EventDetailsLoader() {
     return (
@@ -43,53 +44,69 @@ function EventDetailsLoader() {
 export default function EventDetailsPage() {
     const params = useParams<{ id: string }>();
     const router = useRouter();
+    const supabase = createClient();
     const { toast } = useToast();
-    const { events, loggedInUser, isReady, rsvpToEvent, allUsers } = useAppContext();
+    const { loggedInUser, allUsers } = useAppContext();
+    
+    const [event, setEvent] = React.useState<Event | null>(null);
+    const [isLoading, setIsLoading] = React.useState(true);
     const [isShareOpen, setIsShareOpen] = React.useState(false);
     const [isEditOpen, setIsEditOpen] = React.useState(false);
 
-    const event = React.useMemo(() => {
-        if (!isReady) return undefined;
-        return events.find(e => e.id === Number(params.id));
-    }, [events, params.id, isReady]);
+    const fetchEvent = React.useCallback(async () => {
+        setIsLoading(true);
+        const { data, error } = await supabase
+            .from('events')
+            .select('*, rsvps:event_rsvps(*, profiles!user_id(*)), profiles:creator_id(*)')
+            .eq('id', params.id)
+            .single();
 
-    if (!isReady) return <EventDetailsLoader />;
+        if (error || !data) {
+            toast({ variant: 'destructive', title: 'Error fetching event details' });
+            setEvent(null);
+        } else {
+            setEvent(data as Event);
+        }
+        setIsLoading(false);
+    }, [params.id, supabase, toast]);
+
+    React.useEffect(() => {
+        fetchEvent();
+    }, [fetchEvent]);
+    
+    if (isLoading) return <EventDetailsLoader />;
     if (!event) notFound();
 
     const isPastEvent = new Date(event.date_time) < new Date();
     const userRsvp = event.rsvps?.find(rsvp => rsvp.user_id === loggedInUser?.id);
     const isAdmin = loggedInUser?.is_admin || loggedInUser?.id === event.creator_id;
     
-    const handleRsvp = (status: RSVPStatus) => {
-        if (loggedInUser) {
-            rsvpToEvent(event.id, status);
-        }
-    };
-    
-    const handleNativeShare = async () => {
-        const shareData = {
-            title: event.title,
-            text: event.description,
-            url: window.location.href,
-        };
-        try {
-            if (!navigator.share) throw new Error('Web Share API not available');
-            await navigator.share(shareData);
-        } catch (err) {
-            navigator.clipboard.writeText(shareData.url);
-            toast({ title: 'Link Copied!', description: "The event link has been copied to your clipboard." });
+    const handleRsvp = async (status: RSVPStatus) => {
+        if (!loggedInUser) return;
+        
+        const { error } = await supabase.from('event_rsvps').upsert({
+            event_id: event.id,
+            user_id: loggedInUser.id,
+            status: status
+        }, { onConflict: 'event_id, user_id' });
+        
+        if (error) {
+            toast({ variant: 'destructive', title: 'Error RSVPing', description: error.message });
+        } else {
+            toast({ title: `You're now marked as ${status}!` });
+            fetchEvent(); // Re-fetch to update UI
         }
     };
     
     const rsvpLists = {
-        going: event.rsvps?.filter(r => r.status === 'going').map(r => allUsers.find(u => u.id === r.user_id)).filter(Boolean) as any[],
-        interested: event.rsvps?.filter(r => r.status === 'interested').map(r => allUsers.find(u => u.id === r.user_id)).filter(Boolean) as any[],
+        going: event.rsvps?.filter(r => r.status === 'going').map(r => r.profiles).filter(Boolean) as any[],
+        interested: event.rsvps?.filter(r => r.status === 'interested').map(r => r.profiles).filter(Boolean) as any[],
     };
 
     return (
         <>
             <ShareEventDialog event={event} open={isShareOpen} onOpenChange={setIsShareOpen} />
-            {isAdmin && <CreateEventDialog open={isEditOpen} onOpenChange={setIsEditOpen} eventToEdit={event} />}
+            {isAdmin && <CreateEventDialog open={isEditOpen} onOpenChange={setIsEditOpen} eventToEdit={event} onEventUpdated={fetchEvent} onEventCreated={() => {}} />}
 
             <div className="flex-1 space-y-8 p-4 md:p-8 pt-6">
                 <div className="flex items-center justify-between space-y-2">

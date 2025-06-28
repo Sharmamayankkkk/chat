@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /chat/
+Disallow: /profile/
+Disallow: /settings/
+Disallow: /starred/
+Disallow: /join/
+Disallow: /group/

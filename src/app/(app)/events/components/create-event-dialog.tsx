@@ -30,6 +30,8 @@ interface CreateEventDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   eventToEdit?: Event;
+  onEventCreated: () => void;
+  onEventUpdated: () => void;
 }
 
 const createEventSchema = z.object({
@@ -40,11 +42,10 @@ const createEventSchema = z.object({
   time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Please enter a valid time in HH:mm format."),
 });
 
-export function CreateEventDialog({ open, onOpenChange, eventToEdit }: CreateEventDialogProps) {
+export function CreateEventDialog({ open, onOpenChange, eventToEdit, onEventCreated, onEventUpdated }: CreateEventDialogProps) {
   const { toast } = useToast();
-  const { loggedInUser, addEvent, updateEvent } = useAppContext();
-  const { isReady } = useAppContext();
-
+  const { loggedInUser } = useAppContext();
+  
   const [thumbnailFile, setThumbnailFile] = React.useState<File | null>(null);
   const [thumbnailPreview, setThumbnailPreview] = React.useState<string | null>(eventToEdit?.thumbnail || null);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -117,27 +118,29 @@ export function CreateEventDialog({ open, onOpenChange, eventToEdit }: CreateEve
       combinedDateTime.setHours(hours, minutes);
 
       if (isEditing) {
-        const eventData = {
-          ...eventToEdit,
+        const { error } = await supabase.from('events').update({
           title: values.title,
           description: values.description,
           thumbnail: thumbnailUrl,
           meet_link: values.meet_link,
           date_time: combinedDateTime.toISOString(),
-        };
-        await updateEvent(eventData.id, eventData);
+        }).eq('id', eventToEdit.id);
+
+        if (error) throw error;
         toast({ title: "Event Updated!", description: `The event "${values.title}" has been updated.` });
+        onEventUpdated();
       } else {
-        const eventData = {
+        const { error } = await supabase.from('events').insert({
           creator_id: loggedInUser.id,
           title: values.title,
           description: values.description,
           thumbnail: thumbnailUrl,
           meet_link: values.meet_link,
           date_time: combinedDateTime.toISOString(),
-        };
-        await addEvent(eventData);
+        });
+        if (error) throw error;
         toast({ title: "Event Created!", description: `The event "${values.title}" has been scheduled.` });
+        onEventCreated();
       }
       
       onOpenChange(false);

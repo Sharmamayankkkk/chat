@@ -29,7 +29,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [chats, setChats] = useState<Chat[]>([])
   const [dmRequests, setDmRequests] = useState<DmRequest[]>([])
   const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
-  const [events, setEvents] = useState<Event[]>([]);
   const [themeSettings, setThemeSettingsState] = useState<ThemeSettings>({
     outgoingBubbleColor: "hsl(221.2 83.2% 53.3%)",
     incomingBubbleColor: "hsl(210 40% 96.1%)",
@@ -91,7 +90,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           { data: blockedData, error: blockedError },
           { data: unreadData, error: unreadError },
           { data: chatParticipants, error: participantError },
-          { data: eventsData, error: eventsError },
         ] = await Promise.all([
           supabase.from("profiles").select("*").eq("id", user.id).single(),
           supabase.from("profiles").select("*"),
@@ -99,7 +97,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           supabase.from("blocked_users").select("blocked_user_id").eq("user_id", user.id),
           supabase.rpc("get_unread_counts", { p_user_id: user.id }),
           supabase.from("participants").select("chat_id").eq("user_id", user.id),
-          supabase.from("events").select("*, rsvps:event_rsvps(*), profiles:creator_id(*)"),
         ])
 
         if (profileError || !profile) {
@@ -108,8 +105,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           throw new Error("Could not fetch user profile")
         }
 
-        if (participantError || usersError || dmError || blockedError || unreadError || eventsError) {
-          console.error({ participantError, usersError, dmError, blockedError, unreadError, eventsError })
+        if (participantError || usersError || dmError || blockedError || unreadError) {
+          console.error({ participantError, usersError, dmError, blockedError, unreadError })
         }
 
         const fullUserProfile = { ...profile, email: user.email } as User
@@ -117,7 +114,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setAllUsers((allUsersData as User[]) || [])
         setDmRequests((dmRequestsData as DmRequest[]) || [])
         setBlockedUsers(blockedData?.map(b => b.blocked_user_id) || [])
-        setEvents((eventsData as Event[]) || [])
         
         const chatIds = chatParticipants?.map((p) => p.chat_id) || []
         let chatsData: any[] = []
@@ -155,7 +151,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setChats([])
         setAllUsers([])
         setDmRequests([])
-        setEvents([])
         setBlockedUsers([])
       } finally {
         setIsInitializing(false)
@@ -210,7 +205,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setChats([]);
             setAllUsers([]);
             setDmRequests([]);
-            setEvents([]);
             setBlockedUsers([]);
         }
       }
@@ -304,22 +298,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } else if (table === 'blocked_users') {
             const { data, error } = await supabase.from("blocked_users").select("blocked_user_id").eq("user_id", loggedInUser.id)
             if (!error) setBlockedUsers(data?.map(b => b.blocked_user_id) || []);
-        } else if (table === 'events' || table === 'event_rsvps') {
-            const { data, error } = await supabase.from("events").select("*, rsvps:event_rsvps(*), profiles:creator_id(*)")
-            if (!error) setEvents(data as Event[]);
         }
     }
 
     const dmRequestChannel = supabase.channel("dm-requests-changes").on("postgres_changes", { event: "*", schema: "public", table: "dm_requests", filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, () => handleRealtimeChanges('dm_requests')).subscribe()
     const blockedUsersChannel = supabase.channel("blocked-users-changes").on("postgres_changes", { event: "*", schema: "public", table: "blocked_users", filter: `user_id.eq.${loggedInUser.id}` }, () => handleRealtimeChanges('blocked_users')).subscribe()
-    const eventsChannel = supabase.channel("events-changes").on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => handleRealtimeChanges('events')).subscribe()
-    const rsvpChannel = supabase.channel("rsvp-changes").on("postgres_changes", { event: "*", schema: "public", table: "event_rsvps" }, () => handleRealtimeChanges('events')).subscribe()
     
     return () => {
       supabase.removeChannel(dmRequestChannel);
       supabase.removeChannel(blockedUsersChannel);
-      supabase.removeChannel(eventsChannel);
-      supabase.removeChannel(rsvpChannel);
     }
   }, [loggedInUser, supabase])
 
@@ -459,63 +446,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
   }, [loggedInUser, supabase, toast, allUsers]);
 
-  const shareEventInChats = useCallback(async (event: Event, chatIds: number[]) => {
-    if (!loggedInUser) return;
-    
-    const sharePromises = chatIds.map(chatId => {
-      return supabase.from('messages').insert({
-        chat_id: chatId,
-        user_id: loggedInUser.id,
-        content: `Check out this event: ${event.title}`,
-        attachment_url: event.thumbnail, 
-        attachment_metadata: {
-            type: 'event_share',
-            name: event.title,
-            size: 0,
-            eventId: event.id,
-            eventDate: event.date_time,
-            eventThumbnail: event.thumbnail,
-        },
-      });
-    });
-
-    try {
-      const results = await Promise.all(sharePromises);
-      const failed = results.filter(r => r.error);
-      if (failed.length > 0) {
-        toast({ variant: 'destructive', title: 'Some shares failed', description: `Could not share in ${failed.length} chats.` });
-      } else {
-        toast({ title: 'Event Shared!', description: `Successfully shared in ${chatIds.length} chat(s).` });
-      }
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Error sharing event', description: error.message });
-    }
-  }, [loggedInUser, supabase, toast]);
-
-  const addEvent = useCallback(async (event: Omit<Event, 'id' | 'created_at' | 'rsvps' | 'profiles'>) => {
-    const { error } = await supabase.from('events').insert(event);
-    if (error) throw new Error(error.message);
-  }, [supabase]);
-
-  const updateEvent = useCallback(async (eventId: number, updates: Partial<Event>) => {
-    const { error } = await supabase.from('events').update(updates).eq('id', eventId);
-    if (error) throw new Error(error.message);
-  }, [supabase]);
-
-  const rsvpToEvent = useCallback(async (eventId: number, status: RSVPStatus) => {
-    if (!loggedInUser) return;
-    const { error } = await supabase.from('event_rsvps').upsert({
-        event_id: eventId,
-        user_id: loggedInUser.id,
-        status: status
-    }, { onConflict: 'event_id, user_id' });
-     if (error) {
-        toast({ variant: 'destructive', title: 'Error RSVPing', description: error.message });
-    } else {
-        toast({ title: `You're now marked as ${status}!` });
-    }
-  }, [loggedInUser, supabase, toast]);
-
   const resetUnreadCount = useCallback((chatId: number) => {
     setChats((current) => current.map((c) => (c.id === chatId && c.unreadCount ? { ...c, unreadCount: 0 } : c)))
   }, [])
@@ -530,7 +460,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     chats,
     dmRequests,
     blockedUsers,
-    events,
     sendDmRequest,
     addChat,
     updateUser,
@@ -540,10 +469,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     unblockUser,
     reportUser,
     forwardMessage,
-    shareEventInChats,
-    addEvent,
-    updateEvent,
-    rsvpToEvent,
     themeSettings,
     setThemeSettings,
     isReady,

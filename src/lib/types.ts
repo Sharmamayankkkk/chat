@@ -126,6 +126,7 @@ export type EventRSVP = {
   event_id: number;
   user_id: string;
   status: RSVPStatus;
+  profiles?: User; // Joined user profile for RSVP list
 };
 
 export type Event = {
@@ -147,7 +148,6 @@ export interface AppContextType {
   chats: Chat[]
   dmRequests: DmRequest[]
   blockedUsers: string[]
-  events: Event[]
   sendDmRequest: (toUserId: string, reason: string) => Promise<void>
   addChat: (newChat: Chat) => void
   updateUser: (updates: Partial<User>) => Promise<void>
@@ -157,10 +157,6 @@ export interface AppContextType {
   unblockUser: (userId: string) => Promise<void>
   reportUser: (reportedUserId: string, reason: string, messageId?: number) => Promise<void>
   forwardMessage: (message: Message, chatIds: number[]) => Promise<void>
-  shareEventInChats: (event: Event, chatIds: number[]) => Promise<void>
-  addEvent: (event: Omit<Event, 'id' | 'created_at' | 'rsvps' | 'profiles'>) => Promise<void>
-  updateEvent: (eventId: number, updates: Partial<Event>) => Promise<void>
-  rsvpToEvent: (eventId: number, status: RSVPStatus) => Promise<void>
   themeSettings: ThemeSettings
   setThemeSettings: (newSettings: Partial<ThemeSettings>) => void
   isReady: boolean
