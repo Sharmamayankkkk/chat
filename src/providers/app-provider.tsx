@@ -2,7 +2,7 @@
 "use client"
 
 import { createContext, useContext, useState, type ReactNode, useEffect, useCallback, useMemo, useRef } from "react"
-import type { User, Chat, ThemeSettings, Message, DmRequest, Event, EventRSVP, RSVPStatus, AppContextType } from "@/lib/types"
+import type { User, Chat, ThemeSettings, Message, DmRequest, AppContextType } from "@/lib/types"
 import { createClient } from "@/lib/utils"
 import { Icons } from "@/components/icons"
 import { useToast } from "@/hooks/use-toast"
@@ -225,15 +225,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const openChatId = pathnameRef.current.split("/chat/")[1];
       const isChatOpen = String(newMessage.chat_id) === openChatId;
+      const isWindowFocused = document.hasFocus();
 
-      if (isChatOpen) return;
-
+      // Update chat list with unread count and last message
       setChats((currentChats) =>
         currentChats.map((c) => {
           if (c.id === newMessage.chat_id) {
+            const shouldIncreaseUnread = !isChatOpen || !isWindowFocused;
             return {
               ...c,
-              unreadCount: (c.unreadCount || 0) + 1,
+              unreadCount: shouldIncreaseUnread ? (c.unreadCount || 0) + 1 : c.unreadCount,
               last_message_content: newMessage.attachment_url
                 ? newMessage.attachment_metadata?.name || "Sent an attachment"
                 : newMessage.content,
@@ -243,8 +244,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return c
         }),
       )
+      
+      const shouldShowNotification = Notification.permission === "granted" && (!isChatOpen || !isWindowFocused);
 
-      if (Notification.permission === "granted") {
+      if (shouldShowNotification) {
         const sender = allUsers.find((u) => u.id === newMessage.user_id)
         if (sender) {
           const title = sender.name || "New Message"
@@ -259,6 +262,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           notification.onclick = () => {
               window.focus();
               router.push(`/chat/${newMessage.chat_id}`);
+              notification.close();
           };
         }
       }

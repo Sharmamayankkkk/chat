@@ -2,8 +2,6 @@
 "use client"
 
 import type React from "react"
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { ChatLayout } from "./components/chat-layout"
 import { useAppContext } from "@/providers/app-provider"
