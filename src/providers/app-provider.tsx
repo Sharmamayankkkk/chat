@@ -2,38 +2,12 @@
 "use client"
 
 import { createContext, useContext, useState, type ReactNode, useEffect, useCallback, useMemo, useRef } from "react"
-import type { User, Chat, ThemeSettings, Message, DmRequest, Event, EventRSVP, RSVPStatus } from "@/lib/types"
+import type { User, Chat, ThemeSettings, Message, DmRequest, Event, EventRSVP, RSVPStatus, AppContextType } from "@/lib/types"
 import { createClient } from "@/lib/utils"
 import { Icons } from "@/components/icons"
 import { useToast } from "@/hooks/use-toast"
 import type { Session, RealtimePostgresChangesPayload } from "@supabase/supabase-js"
 import { usePathname, useRouter } from "next/navigation"
-
-interface AppContextType {
-  loggedInUser: User | null
-  allUsers: User[]
-  chats: Chat[]
-  dmRequests: DmRequest[]
-  blockedUsers: string[]
-  events: Event[]
-  sendDmRequest: (toUserId: string, reason: string) => Promise<void>
-  addChat: (newChat: Chat) => void
-  updateUser: (updates: Partial<User>) => Promise<void>
-  leaveGroup: (chatId: number) => Promise<void>
-  deleteGroup: (chatId: number) => Promise<void>
-  blockUser: (userId: string) => Promise<void>
-  unblockUser: (userId: string) => Promise<void>
-  reportUser: (reportedUserId: string, reason: string, messageId?: number) => Promise<void>
-  forwardMessage: (message: Message, chatIds: number[]) => Promise<void>
-  shareEventInChats: (event: Event, chatIds: number[]) => Promise<void>
-  addEvent: (event: Omit<Event, 'id' | 'created_at' | 'rsvps' | 'profiles'>) => Promise<void>
-  updateEvent: (eventId: number, updates: Partial<Event>) => Promise<void>
-  rsvpToEvent: (eventId: number, status: RSVPStatus) => Promise<void>
-  themeSettings: ThemeSettings
-  setThemeSettings: (newSettings: Partial<ThemeSettings>) => void
-  isReady: boolean
-  resetUnreadCount: (chatId: number) => void
-}
 
 const AppContext = createContext<AppContextType | undefined>(undefined)
 
@@ -204,10 +178,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!mounted) return
 
       setSession(session);
-      if (session && !initialSessionProcessed.current) {
+      if (event === "SIGNED_IN" && session && !initialSessionProcessed.current) {
         initialSessionProcessed.current = true;
         await fetchInitialData(session);
-      } else if (!session) {
+      } else if (event === "SIGNED_OUT") {
         initialSessionProcessed.current = false;
         setLoggedInUser(null);
         setChats([]);
@@ -215,7 +189,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setDmRequests([]);
         setEvents([]);
         setBlockedUsers([]);
-        router.push('/login');
       }
       if (mounted) setIsReady(true);
     })
@@ -236,10 +209,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const openChatId = pathnameRef.current.split("/chat/")[1];
       const isChatOpen = String(newMessage.chat_id) === openChatId;
 
-      // If the chat is currently open, the ChatPage is responsible. Do nothing here.
       if (isChatOpen) return;
 
-      // For background chats, update unread count and show a notification.
       setChats((currentChats) =>
         currentChats.map((c) => {
           if (c.id === newMessage.chat_id) {

@@ -10,6 +10,8 @@ import { createClient } from "@/lib/utils"
 import type { Chat, Message } from "@/lib/types"
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js"
 
+const MESSAGES_PER_PAGE = 50
+
 function ChatPageLoading() {
   return (
     <div className="flex h-full w-full items-center justify-center bg-background">
@@ -22,7 +24,7 @@ function ChatPageLoading() {
 }
 
 export default function ChatPage() {
-  const params = useParams<{ id:string }>()
+  const params = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const highlightMessageId = searchParams.get("highlight")
 
@@ -30,11 +32,15 @@ export default function ChatPage() {
   const [localChat, setLocalChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [isInitialLoading, setIsInitialLoading] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
 
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const topMessageSentinelRef = useRef<HTMLDivElement>(null)
 
-  const fetchFullChatData = useCallback(
+  const fetchChatAndInitialMessages = useCallback(
     async (chatId: string) => {
       try {
         const { data: chatData, error: chatError } = await supabase
@@ -45,37 +51,107 @@ export default function ChatPage() {
 
         if (chatError || !chatData) throw chatError
 
+        const isParticipant = chatData.participants.some(p => p.user_id === loggedInUser?.id);
+        if (!isParticipant) {
+          throw new Error("You are not a member of this chat.");
+        }
+        
+        setLocalChat(chatData as unknown as Chat)
+
         const { data: messagesData, error: messagesError } = await supabase
           .from("messages")
           .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
           .eq("chat_id", chatId)
-          .order("created_at", { ascending: true })
+          .order("created_at", { ascending: false })
+          .limit(MESSAGES_PER_PAGE)
 
         if (messagesError) throw messagesError
 
-        setMessages(messagesData as unknown as Message[])
-        setLocalChat(chatData as unknown as Chat)
+        const reversedMessages = (messagesData as unknown as Message[]).reverse()
+        setMessages(reversedMessages)
+        setHasMore(messagesData.length === MESSAGES_PER_PAGE)
       } catch (error) {
         console.error("Error fetching chat data:", error)
-        setLocalChat(null)
-        setMessages([])
+        setLocalChat(null) // This will trigger notFound() in the render
       } finally {
-        if (isInitialLoading) {
-          setIsInitialLoading(false)
-        }
+        setIsInitialLoading(false)
       }
     },
-    [supabase, isInitialLoading],
+    [supabase, loggedInUser?.id],
   )
+
+  const loadMoreMessages = useCallback(async () => {
+    if (isLoadingMore || !hasMore || messages.length === 0) return
+
+    setIsLoadingMore(true)
+    const oldestMessage = messages[0]
+    if (!oldestMessage) {
+      setIsLoadingMore(false)
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("messages")
+        .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
+        .eq("chat_id", params.id)
+        .lt("created_at", oldestMessage.created_at)
+        .order("created_at", { ascending: false })
+        .limit(MESSAGES_PER_PAGE)
+
+      if (error) throw error
+
+      const newMessages = (data as unknown as Message[]).reverse()
+      setHasMore(data.length === MESSAGES_PER_PAGE)
+
+      const scrollContainer = scrollContainerRef.current
+      if (scrollContainer) {
+        const previousScrollHeight = scrollContainer.scrollHeight
+        setMessages((prev) => [...newMessages, ...prev])
+        
+        requestAnimationFrame(() => {
+          scrollContainer.scrollTop = scrollContainer.scrollHeight - previousScrollHeight
+        })
+      } else {
+        setMessages((prev) => [...newMessages, ...prev])
+      }
+    } catch (error) {
+      console.error("Error loading more messages:", error)
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [isLoadingMore, hasMore, messages, supabase, params.id])
 
   useEffect(() => {
     if (isAppReady && loggedInUser) {
-      fetchFullChatData(params.id)
+      fetchChatAndInitialMessages(params.id)
     }
-  }, [params.id, isAppReady, loggedInUser?.id, fetchFullChatData])
+  }, [params.id, isAppReady, loggedInUser?.id, fetchChatAndInitialMessages])
 
   useEffect(() => {
-    if (supabase && params.id && loggedInUser?.id) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMoreMessages()
+        }
+      },
+      { root: scrollContainerRef.current, threshold: 0.1 }
+    )
+
+    const sentinel = topMessageSentinelRef.current
+    if (sentinel) {
+      observer.observe(sentinel)
+    }
+
+    return () => {
+      if (sentinel) {
+        observer.unobserve(sentinel)
+      }
+    }
+  }, [loadMoreMessages])
+
+  useEffect(() => {
+    if (supabase && params.id && loggedInUser?.id && messages.length > 0) {
       const markAsRead = async () => {
         await supabase.rpc("mark_messages_as_read", {
           chat_id_param: params.id,
@@ -88,7 +164,7 @@ export default function ChatPage() {
       window.addEventListener("focus", focusListener)
       return () => window.removeEventListener("focus", focusListener)
     }
-  }, [params.id, loggedInUser?.id, supabase, resetUnreadCount])
+  }, [params.id, loggedInUser?.id, supabase, resetUnreadCount, messages])
 
   const fetchFullMessage = useCallback(
     async (messageId: number) => {
@@ -111,10 +187,7 @@ export default function ChatPage() {
     if (!isAppReady || !supabase || !params.id || !loggedInUser) return
 
     const handleNewMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
-      // Ignore messages from the current user because they are added optimistically.
-      if (payload.new.user_id === loggedInUser.id) {
-        return
-      }
+      if (payload.new.user_id === loggedInUser.id) return
 
       const fullMessage = await fetchFullMessage(payload.new.id)
       if (fullMessage) {
@@ -125,8 +198,6 @@ export default function ChatPage() {
     }
 
     const handleUpdatedMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
-       // For updates, we can just merge the new data with the existing message
-      // This preserves the profile picture and prevents flickering
       setMessages((current) =>
         current.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)),
       )
@@ -176,6 +247,10 @@ export default function ChatPage() {
       loggedInUser={loggedInUser}
       setMessages={setMessages}
       highlightMessageId={highlightMessageId ? Number(highlightMessageId) : null}
+      isLoadingMore={isLoadingMore}
+      hasMoreMessages={hasMore}
+      topMessageSentinelRef={topMessageSentinelRef}
+      scrollContainerRef={scrollContainerRef}
     />
   )
 }

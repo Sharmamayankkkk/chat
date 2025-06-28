@@ -140,3 +140,29 @@ export type Event = {
   rsvps: EventRSVP[];
   profiles?: User; // Joined creator profile
 };
+
+export interface AppContextType {
+  loggedInUser: User | null
+  allUsers: User[]
+  chats: Chat[]
+  dmRequests: DmRequest[]
+  blockedUsers: string[]
+  events: Event[]
+  sendDmRequest: (toUserId: string, reason: string) => Promise<void>
+  addChat: (newChat: Chat) => void
+  updateUser: (updates: Partial<User>) => Promise<void>
+  leaveGroup: (chatId: number) => Promise<void>
+  deleteGroup: (chatId: number) => Promise<void>
+  blockUser: (userId: string) => Promise<void>
+  unblockUser: (userId: string) => Promise<void>
+  reportUser: (reportedUserId: string, reason: string, messageId?: number) => Promise<void>
+  forwardMessage: (message: Message, chatIds: number[]) => Promise<void>
+  shareEventInChats: (event: Event, chatIds: number[]) => Promise<void>
+  addEvent: (event: Omit<Event, 'id' | 'created_at' | 'rsvps' | 'profiles'>) => Promise<void>
+  updateEvent: (eventId: number, updates: Partial<Event>) => Promise<void>
+  rsvpToEvent: (eventId: number, status: RSVPStatus) => Promise<void>
+  themeSettings: ThemeSettings
+  setThemeSettings: (newSettings: Partial<ThemeSettings>) => void
+  isReady: boolean
+  resetUnreadCount: (chatId: number) => void
+}

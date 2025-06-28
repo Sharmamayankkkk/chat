@@ -51,6 +51,10 @@ interface ChatProps {
   loggedInUser: User;
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   highlightMessageId?: number | null;
+  isLoadingMore: boolean;
+  hasMoreMessages: boolean;
+  topMessageSentinelRef: React.RefObject<HTMLDivElement>;
+  scrollContainerRef: React.RefObject<HTMLDivElement>;
 }
 
 function formatBytes(bytes: number, decimals = 2) {
@@ -68,7 +72,7 @@ const formatRecordingTime = (seconds: number) => {
     return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
 };
 
-export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: ChatProps) {
+export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLoadingMore, hasMoreMessages, topMessageSentinelRef, scrollContainerRef }: ChatProps) {
     const { toast } = useToast();
     const { 
         themeSettings, 
@@ -77,6 +81,11 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         sendDmRequest,
         leaveGroup,
         deleteGroup,
+        blockedUsers,
+        blockUser,
+        unblockUser,
+        reportUser,
+        forwardMessage,
     } = useAppContext();
     const [message, setMessage] = useState('');
     const [caption, setCaption] = useState('');
@@ -89,7 +98,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     const attachmentInputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const scrollAreaRef = useRef<HTMLDivElement>(null);
     
     const [isRecording, setIsRecording] = useState(false);
     const [recordingStatus, setRecordingStatus] = useState<'recording' | 'paused'>('recording');
@@ -146,7 +154,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         isChannel && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin,
     [chat, loggedInUser.id, isChannel]);
 
-    const { blockedUsers, blockUser, unblockUser, reportUser } = useAppContext();
     const isChatPartnerBlocked = useMemo(() => {
         if (!chatPartner) return false;
         return blockedUsers.includes(chatPartner.id);
@@ -211,14 +218,19 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     };
 
     useEffect(() => {
-        const highlightedElement = highlightMessageId ? document.getElementById(`message-${highlightMessageId}`) : null;
+      const scrollContainer = scrollContainerRef.current;
+      if (!scrollContainer) return;
+    
+      const shouldScrollToBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop <= scrollContainer.clientHeight + 200;
+      
+      const highlightedElement = highlightMessageId ? document.getElementById(`message-${highlightMessageId}`) : null;
 
-        if (highlightedElement) {
-            jumpToMessage(highlightMessageId as number);
-        } else {
-            messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
-        }
-    }, [chat.id, highlightMessageId, chat.messages.length]);
+      if (highlightedElement) {
+          jumpToMessage(highlightMessageId as number);
+      } else if (shouldScrollToBottom) {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, [chat.messages.length, highlightMessageId, scrollContainerRef]);
 
 
     useEffect(() => {
@@ -234,6 +246,31 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         let attachmentUrl: string | null = null;
         let attachmentMetadata: AttachmentMetadata | null = null;
         
+        const tempId = Date.now();
+        const newMessageObject: Message = {
+          id: tempId,
+          created_at: new Date().toISOString(),
+          chat_id: chat.id,
+          user_id: loggedInUser.id,
+          content: content.trim(),
+          attachment_url: attachment ? attachment.url : null,
+          attachment_metadata: attachment ? { name: attachment.file.name, type: attachment.file.type, size: attachment.file.size } : null,
+          reply_to_message_id: replyingTo?.id,
+          profiles: loggedInUser,
+          replied_to_message: replyingTo,
+          is_edited: false,
+          reactions: null,
+          read_by: [loggedInUser.id]
+        };
+        
+        setMessages(current => [...current, newMessageObject]);
+        setMessage('');
+        setCaption('');
+        setReplyingTo(null);
+        setAttachmentPreview(null);
+        setIsPreviewOpen(false);
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+
         try {
             if (attachment) {
                 const file = attachment.file;
@@ -272,20 +309,15 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
 
             if (error) throw error;
             
-            // Optimistic update
             if (newMessage) {
-                setMessages(current => [...current, newMessage as Message]);
+              setMessages(current => current.map(m => m.id === tempId ? (newMessage as Message) : m));
+            } else {
+              throw new Error("Failed to send message, no data returned.");
             }
-
-            setMessage('');
-            setCaption('');
-            setReplyingTo(null);
-            setAttachmentPreview(null);
-            setIsPreviewOpen(false);
-            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
 
         } catch (error: any) {
              toast({ variant: 'destructive', title: "Error sending message", description: error.message });
+             setMessages(current => current.filter(m => m.id !== tempId));
         } finally {
             setIsSending(false);
         }
@@ -295,15 +327,35 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
         if (isSending) return;
         
         setIsSending(true);
+        const tempId = Date.now();
+        const isSticker = stickerUrl.includes('/stickers/');
+        const attachmentMetadata: AttachmentMetadata = { 
+            name: isSticker ? 'sticker.webp' : 'emoji.png', 
+            type: isSticker ? 'image/webp' : 'image/png', 
+            size: 0 
+        };
+
+        const newMessageObject: Message = {
+            id: tempId,
+            created_at: new Date().toISOString(),
+            chat_id: chat.id,
+            user_id: loggedInUser.id,
+            content: null,
+            attachment_url: stickerUrl,
+            attachment_metadata: attachmentMetadata,
+            reply_to_message_id: replyingTo?.id,
+            profiles: loggedInUser,
+            replied_to_message: replyingTo,
+            is_edited: false,
+            reactions: null,
+            read_by: [loggedInUser.id]
+        };
+
+        setMessages(current => [...current, newMessageObject]);
+        setReplyingTo(null);
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
         
         try {
-            const isSticker = stickerUrl.includes('/stickers/');
-            const attachmentMetadata: AttachmentMetadata = { 
-                name: isSticker ? 'sticker.webp' : 'emoji.png', 
-                type: isSticker ? 'image/webp' : 'image/png', 
-                size: 0 
-            };
-    
             const { data: newMessage, error } = await supabase
                 .from('messages')
                 .insert({
@@ -320,14 +372,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
             if (error) throw error;
 
             if (newMessage) {
-                setMessages(current => [...current, newMessage as Message]);
+              setMessages(current => current.map(m => m.id === tempId ? (newMessage as Message) : m));
             }
             
-            setReplyingTo(null);
-            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-    
         } catch (error: any) {
              toast({ variant: 'destructive', title: "Error sending sticker", description: error.message });
+             setMessages(current => current.filter(m => m.id !== tempId));
         } finally {
             setIsSending(false);
         }
@@ -670,6 +720,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
     const getMessageStatus = (message: Message) => {
         const isMyMessage = message.user_id === loggedInUser.id;
         if (!isMyMessage) return null;
+        
+        if (typeof message.id === 'string' && message.id.startsWith('temp-')) {
+          return 'pending';
+        }
 
         const otherParticipants = chat.participants.filter(p => p.user_id !== loggedInUser.id);
         if (otherParticipants.length === 0) return 'sent';
@@ -990,6 +1044,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                           {message.is_edited && <span className="text-xs italic">Edited</span>}
                           {message.is_starred && <Star className="h-3 w-3 text-amber-400 fill-amber-400 mr-1" />}
                           <span>{format(new Date(message.created_at), 'p')}</span>
+                          {isMyMessage && messageStatus === 'pending' && <Clock className="h-4 w-4" />}
                           {isMyMessage && messageStatus === 'sent' && <Check className="h-4 w-4" />}
                           {isMyMessage && messageStatus === 'read' && <CheckCheck className="h-4 w-4 text-primary" />}
                       </div>
@@ -1031,7 +1086,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
                                 <Reply className="mr-2 h-4 w-4" />
                                 <span>Reply</span>
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setMessageToForward(message)}>
+                              <DropdownMenuItem onClick={() => forwardMessage(message)}>
                                   <Share2 className="mr-2 h-4 w-4" />
                                   <span>Forward</span>
                               </DropdownMenuItem>
@@ -1090,7 +1145,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
   return (
     <div className="flex h-dvh flex-col">
         {chatPartner && <RequestDmDialog open={isRequestDmOpen} onOpenChange={setIsRequestDmOpen} targetUser={chatPartner} />}
-        <ForwardMessageDialog message={messageToForward} open={!!messageToForward} onOpenChange={(open) => !open && setMessageToForward(null)} />
+        <ForwardMessageDialog messageToForward={messageToForward} onOpenChange={(open) => !open && setMessageToForward(null)} />
         {chatPartner && <ReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} userToReport={chatPartner} messageToReport={messageToReport} />}
         <PinnedMessagesDialog
             open={isPinnedDialogOpen}
@@ -1205,12 +1260,24 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId }: Ch
       
       <div className="flex-1 relative min-h-0">
         <div className="absolute inset-0 z-0" style={wallpaperStyle} />
-        <ScrollArea viewportRef={scrollAreaRef} className="absolute inset-0 h-full w-full">
+        <ScrollArea viewportRef={scrollContainerRef} className="absolute inset-0 h-full w-full">
             <div className="p-4 space-y-6">
-            {chat.messages
-            .filter(message => !blockedUsers.includes(message.user_id))
-            .map((message) => <MessageBubble key={message.id} message={message} />)}
-            <div ref={messagesEndRef} />
+                <div ref={topMessageSentinelRef} className="h-px">
+                  {isLoadingMore && (
+                    <div className="flex justify-center py-4">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    </div>
+                  )}
+                  {!hasMoreMessages && chat.messages.length > 0 && (
+                    <div className="text-center text-xs text-muted-foreground py-4">
+                      You've reached the beginning of this chat.
+                    </div>
+                  )}
+                </div>
+                {chat.messages
+                .filter(message => !blockedUsers.includes(message.user_id))
+                .map((message) => <MessageBubble key={message.id} message={message} />)}
+                <div ref={messagesEndRef} />
             </div>
         </ScrollArea>
       </div>
