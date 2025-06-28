@@ -6,7 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { v4 as uuidv4 } from 'uuid';
 import { useSwipeable } from 'react-swipeable';
-import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock, CircleSlash } from 'lucide-react';
+import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock, CircleSlash, ArrowDown, AtSign } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -76,7 +76,7 @@ const formatRecordingTime = (seconds: number) => {
 const DELETED_MESSAGE_MARKER = '[[MSG_DELETED]]';
 const SYSTEM_MESSAGE_PREFIX = '[[SYS:';
 
-export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLoadingMore, hasMoreMessages, topMessageSentinelRef, scrollContainerRef, initialUnreadCount }: ChatProps) {
+export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLoadingMore, hasMoreMessages, topMessageSentinelRef, scrollContainerRef, initialUnreadCount = 0 }: ChatProps) {
     const { toast } = useToast();
     const { 
         themeSettings, 
@@ -125,7 +125,36 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const [isPinnedDialogOpen, setIsPinnedDialogOpen] = useState(false);
     const [isFetchingLink, setIsFetchingLink] = useState(false);
     
+    const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+    const [firstUnreadMentionId, setFirstUnreadMentionId] = useState<number | null>(null);
+    
     const hasScrolledOnLoad = useRef(false);
+
+    useEffect(() => {
+        const scrollContainer = scrollContainerRef.current;
+        if (!scrollContainer) return;
+
+        const handleScroll = () => {
+            const isAtBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < 400;
+            setShowScrollToBottom(!isAtBottom);
+        };
+
+        scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+        return () => scrollContainer.removeEventListener('scroll', handleScroll);
+    }, [scrollContainerRef]);
+
+    useEffect(() => {
+        if (initialUnreadCount > 0 && chat.messages.length > 0) {
+            const unreadMessages = chat.messages.slice(-initialUnreadCount);
+            const mentionRegex = new RegExp(`@${loggedInUser.username}|@everyone`, 'i');
+            
+            const firstMention = unreadMessages.find(m => m.content && mentionRegex.test(m.content));
+
+            if (firstMention) {
+                setFirstUnreadMentionId(firstMention.id);
+            }
+        }
+    }, [initialUnreadCount, chat.messages, loggedInUser.username]);
 
     useEffect(() => {
         fetch('/api/assets')
@@ -745,6 +774,17 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 sendSystemMessage(`📌 ${loggedInUser.name} pinned a message.`);
             }
             toast({ title: newIsPinned ? 'Message pinned' : 'Message unpinned' });
+        }
+    };
+
+    const handleScrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    const handleJumpToMention = () => {
+        if (firstUnreadMentionId) {
+            jumpToMessage(firstUnreadMentionId);
+            setFirstUnreadMentionId(null);
         }
     };
 
@@ -1397,6 +1437,37 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 <div ref={messagesEndRef} />
             </div>
         </ScrollArea>
+        <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-2">
+            {firstUnreadMentionId && (
+                <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button size="icon" className="rounded-full shadow-lg h-10 w-10" onClick={handleJumpToMention}>
+                                <AtSign className="h-5 w-5" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent><p>Jump to unread mention</p></TooltipContent>
+                    </Tooltip>
+                </TooltipProvider>
+            )}
+            {showScrollToBottom && (
+                <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button size="icon" className="rounded-full shadow-lg h-10 w-10 relative" onClick={handleScrollToBottom}>
+                                <ArrowDown className="h-5 w-5" />
+                                {initialUnreadCount > 0 && (
+                                    <Badge variant="destructive" className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                                        {initialUnreadCount > 9 ? "9+" : initialUnreadCount}
+                                    </Badge>
+                                )}
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent><p>Scroll to bottom</p></TooltipContent>
+                    </Tooltip>
+                </TooltipProvider>
+            )}
+        </div>
       </div>
       <div className="p-2 border-t bg-background shrink-0">
         {isChannel && !canPostInChannel ? (
