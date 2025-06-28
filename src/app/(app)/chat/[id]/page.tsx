@@ -48,6 +48,8 @@ export default function ChatPage() {
 
   const fetchChatAndInitialMessages = useCallback(
     async (chatId: string) => {
+      if (!loggedInUser?.id) return;
+      setIsInitialLoading(true);
       try {
         const { data: chatData, error: chatError } = await supabase
           .from("chats")
@@ -132,7 +134,7 @@ export default function ChatPage() {
     if (isAppReady && loggedInUser) {
       fetchChatAndInitialMessages(params.id)
     }
-  }, [params.id, isAppReady, loggedInUser?.id, fetchChatAndInitialMessages])
+  }, [params.id, isAppReady, loggedInUser, fetchChatAndInitialMessages])
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -160,7 +162,7 @@ export default function ChatPage() {
     if (supabase && params.id && loggedInUser?.id && messages.length > 0) {
       const markAsRead = async () => {
         await supabase.rpc("mark_messages_as_read", {
-          chat_id_param: params.id,
+          chat_id_param: Number(params.id),
           user_id_param: loggedInUser.id,
         })
         resetUnreadCount(Number(params.id))
@@ -193,8 +195,6 @@ export default function ChatPage() {
     if (!isAppReady || !supabase || !params.id || !loggedInUser) return;
 
     const handleNewMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
-      // This handler is primarily for messages from other users.
-      // The sender's own message is added optimistically in Chat.tsx.
       if (payload.new.user_id === loggedInUser.id) {
         return;
       }
@@ -202,10 +202,7 @@ export default function ChatPage() {
       const fullMessage = await fetchFullMessage(payload.new.id);
       if (fullMessage) {
         setMessages((current) => {
-          // Avoid adding duplicates
-          if (current.some((m) => m.id === fullMessage.id)) {
-            return current;
-          }
+          if (current.some((m) => m.id === fullMessage.id)) return current;
           return [...current, fullMessage];
         });
       }

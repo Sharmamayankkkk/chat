@@ -47,23 +47,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     wallpaperBrightness: 100,
   })
   const [isReady, setIsReady] = useState(false)
-  const [isInitializing, setIsInitializing] = useState(false)
+  const [isInitializing, setIsInitializing] = useState(true);
 
   // Use refs to prevent infinite loops and stale closures
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
   const subscriptionsRef = useRef<any[]>([])
   const notificationPermissionRequested = useRef(false)
-  const pathnameRef = useRef('')
+  
+  // Create refs for state that's used in callbacks to avoid dependency issues
+  const allUsersRef = useRef(allUsers);
+  useEffect(() => { allUsersRef.current = allUsers }, [allUsers]);
+
+  const pathnameRef = useRef('');
+  const routerRef = useRef<any>(null);
 
   const { toast } = useToast()
   const router = useRouter()
   const pathname = usePathname()
 
-  // Keep pathnameRef updated
-  useEffect(() => {
-    pathnameRef.current = pathname;
-  }, [pathname]);
+  // Keep refs updated
+  useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
+  useEffect(() => { routerRef.current = router; }, [router]);
 
   // Request notification permission early
   const requestNotificationPermission = useCallback(async () => {
@@ -88,9 +93,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const fetchInitialData = useCallback(
     async (session: Session) => {
-      if (isInitializing) return
       setIsInitializing(true)
-
       try {
         const { user } = session
         const [
@@ -164,54 +167,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setBlockedUsers([])
       } finally {
         setIsInitializing(false)
+        setIsReady(true);
       }
     },
-    [supabase, toast, requestNotificationPermission, isInitializing],
+    [supabase, toast, requestNotificationPermission],
   )
 
   // Initialize app and handle auth state changes
   useEffect(() => {
     let mounted = true;
 
-    // Load theme settings from localStorage
     try {
       const savedSettings = localStorage.getItem("themeSettings");
-      if (savedSettings) {
-        setThemeSettingsState(JSON.parse(savedSettings));
-      }
+      if (savedSettings) setThemeSettingsState(JSON.parse(savedSettings));
     } catch (error) {
       console.error("Could not load theme settings:", error);
     }
     
-    // Proactively get the session, which is faster and more reliable on initial load
-    const initializeSession = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (mounted) {
-            if (session) {
-                setSession(session);
-                await fetchInitialData(session);
-            }
-            setIsReady(true);
-        }
-    };
-
-    initializeSession();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!mounted) return;
-        
         setSession(session);
-
-        if (event === 'SIGNED_IN') {
-            await fetchInitialData(session!);
+        
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+            if (session) await fetchInitialData(session);
         } else if (event === 'SIGNED_OUT') {
             setLoggedInUser(null);
             setChats([]);
             setAllUsers([]);
             setDmRequests([]);
             setBlockedUsers([]);
+            setIsInitializing(false);
+            setIsReady(true);
         }
       }
     );
@@ -224,10 +211,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const handleNewMessage = useCallback(
     (payload: RealtimePostgresChangesPayload<Message>) => {
-      if (!loggedInUser) return;
+      const currentUser = loggedInUser;
+      if (!currentUser) return;
 
       const newMessage = payload.new as Message;
-      const isMyMessage = newMessage.user_id === loggedInUser.id;
+      const isMyMessage = newMessage.user_id === currentUser.id;
 
       setChats((currentChats) => {
         const newChats = currentChats.map((c) => {
@@ -239,9 +227,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
             return {
               ...c,
-              last_message_content: newMessage.attachment_url
-                ? newMessage.attachment_metadata?.name || "Sent an attachment"
-                : newMessage.content,
+              last_message_content: newMessage.attachment_url ? newMessage.attachment_metadata?.name || "Sent an attachment" : newMessage.content,
               last_message_timestamp: newMessage.created_at,
               unreadCount: shouldIncreaseUnread ? (c.unreadCount || 0) + 1 : c.unreadCount,
             };
@@ -251,41 +237,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return sortChats(newChats);
       });
       
-      // Handle notifications only for messages from others
-      if (isMyMessage) return;
+      if (!isMyMessage) {
+        const openChatId = pathnameRef.current.split("/chat/")[1];
+        const isChatOpen = String(newMessage.chat_id) === openChatId;
+        const isWindowFocused = document.hasFocus();
+        const shouldShowNotification = Notification.permission === "granted" && (!isChatOpen || !isWindowFocused);
 
-      const openChatId = pathnameRef.current.split("/chat/")[1];
-      const isChatOpen = String(newMessage.chat_id) === openChatId;
-      const isWindowFocused = document.hasFocus();
-      const shouldShowNotification = Notification.permission === "granted" && (!isChatOpen || !isWindowFocused);
-
-      if (shouldShowNotification) {
-        const sender = allUsers.find((u) => u.id === newMessage.user_id);
-        if (sender) {
-          const title = sender.name || "New Message";
-          const body = newMessage.content || (newMessage.attachment_metadata?.name ? `Sent: ${newMessage.attachment_metadata.name}` : "Sent an attachment");
-          
-          const notification = new Notification(title, {
-              body: body,
-              icon: sender.avatar_url || "/logo/light_KCS.png",
-              tag: `chat-${newMessage.chat_id}`,
-          });
-
-          notification.onclick = () => {
+        if (shouldShowNotification) {
+          const sender = allUsersRef.current.find((u) => u.id === newMessage.user_id);
+          if (sender) {
+            const title = sender.name || "New Message";
+            const body = newMessage.content || (newMessage.attachment_metadata?.name ? `Sent: ${newMessage.attachment_metadata.name}` : "Sent an attachment");
+            
+            const notification = new Notification(title, { body, icon: sender.avatar_url || "/logo/light_KCS.png", tag: `chat-${newMessage.chat_id}` });
+            notification.onclick = () => {
               window.focus();
-              router.push(`/chat/${newMessage.chat_id}`);
+              routerRef.current?.push(`/chat/${newMessage.chat_id}`);
               notification.close();
-          };
+            };
+          }
         }
       }
     },
-    [loggedInUser, allUsers, router]
+    [loggedInUser] // Stable dependency
   );
   
   const chatIdsString = useMemo(() => chats.map((c) => c.id).sort().join(","), [chats])
 
   useEffect(() => {
-    if (!isReady || !loggedInUser || !chatIdsString) return
+    if (!isReady || !loggedInUser || !chatIdsString) return;
 
     subscriptionsRef.current.forEach((sub) => supabase.removeChannel(sub));
     subscriptionsRef.current = [];
@@ -302,7 +282,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscriptionsRef.current.forEach((sub) => supabase.removeChannel(sub))
       subscriptionsRef.current = [];
     }
-  }, [isReady, loggedInUser, chatIdsString, supabase, handleNewMessage])
+  }, [isReady, loggedInUser, chatIdsString, supabase, handleNewMessage]);
 
   useEffect(() => {
     if (!loggedInUser) return
@@ -329,11 +309,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const setThemeSettings = useCallback((newSettings: Partial<ThemeSettings>) => {
     setThemeSettingsState((prev) => {
       const updated = { ...prev, ...newSettings }
-      try {
-        localStorage.setItem("themeSettings", JSON.stringify(updated))
-      } catch (error) {
-        console.error("Could not save theme settings to localStorage", error)
-      }
+      try { localStorage.setItem("themeSettings", JSON.stringify(updated)) } catch (error) { console.error("Could not save theme settings to localStorage", error) }
       return updated
     })
   }, [])
@@ -341,8 +317,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addChat = useCallback((newChat: Chat) => {
     setChats((currentChats) => {
       if (currentChats.some((c) => c.id === newChat.id)) return currentChats
-      const newChatList = [newChat, ...currentChats]
-      return sortChats(newChatList);
+      return sortChats([newChat, ...currentChats]);
     })
   }, [])
 
@@ -353,16 +328,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setLoggedInUser((current) => ({ ...current!, ...updates }))
       try {
         const { error } = await supabase.from("profiles").update({ name: updates.name, username: updates.username, bio: updates.bio, avatar_url: updates.avatar_url }).eq("id", loggedInUser.id)
-        if (error) {
-          toast({ variant: "destructive", title: "Error updating profile", description: error.message })
-          setLoggedInUser(oldUser)
-        }
+        if (error) { toast({ variant: "destructive", title: "Error updating profile", description: error.message }); setLoggedInUser(oldUser) }
       } catch (error: any) {
-        toast({ variant: "destructive", title: "Error updating profile", description: error.message })
-        setLoggedInUser(oldUser)
+        toast({ variant: "destructive", title: "Error updating profile", description: error.message }); setLoggedInUser(oldUser)
       }
-    },
-    [loggedInUser, supabase, toast],
+    }, [loggedInUser, supabase, toast],
   )
 
   const leaveGroup = useCallback(async (chatId: number) => {
@@ -371,9 +341,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.from("participants").delete().match({ chat_id: chatId, user_id: loggedInUser.id, })
       if (error) throw error;
       setChats((current) => current.filter((c) => c.id !== chatId))
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error leaving group", description: error.message })
-    }
+    } catch (error: any) { toast({ variant: "destructive", title: "Error leaving group", description: error.message }) }
   }, [loggedInUser, supabase, toast])
 
   const deleteGroup = useCallback(async (chatId: number) => {
@@ -381,9 +349,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.from("chats").delete().eq("id", chatId)
       if (error) throw error;
       setChats((current) => current.filter((c) => c.id !== chatId))
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error deleting group", description: error.message })
-    }
+    } catch (error: any) { toast({ variant: "destructive", title: "Error deleting group", description: error.message }) }
   }, [supabase, toast])
 
   const sendDmRequest = useCallback(async (toUserId: string, reason: string) => {
@@ -392,76 +358,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.from("dm_requests").insert({ from_user_id: loggedInUser.id, to_user_id: toUserId, reason: reason })
       if (error) throw error;
       toast({ title: "Request Sent!", description: "Your request to message this user has been sent for approval." })
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error sending request", description: error.message })
-    }
+    } catch (error: any) { toast({ variant: "destructive", title: "Error sending request", description: error.message }) }
   }, [loggedInUser, supabase, toast])
 
   const blockUser = useCallback(async (userId: string) => {
     if (!loggedInUser) return
     setBlockedUsers(prev => [...prev, userId]);
     const { error } = await supabase.from("blocked_users").insert({ user_id: loggedInUser.id, blocked_user_id: userId })
-    if (error) {
-        setBlockedUsers(prev => prev.filter(id => id !== userId));
-        toast({ variant: 'destructive', title: 'Error blocking user', description: error.message });
-    } else {
-        toast({ title: 'User Blocked', description: 'You will no longer see messages from this user.' });
-    }
+    if (error) { setBlockedUsers(prev => prev.filter(id => id !== userId)); toast({ variant: 'destructive', title: 'Error blocking user', description: error.message });
+    } else { toast({ title: 'User Blocked', description: 'You will no longer see messages from this user.' }); }
   }, [loggedInUser, supabase, toast]);
 
   const unblockUser = useCallback(async (userId: string) => {
     if (!loggedInUser) return
     setBlockedUsers(prev => prev.filter(id => id !== userId));
     const { error } = await supabase.from("blocked_users").delete().match({ user_id: loggedInUser.id, blocked_user_id: userId })
-    if (error) {
-        setBlockedUsers(prev => [...prev, userId]);
-        toast({ variant: 'destructive', title: 'Error unblocking user', description: error.message });
-    } else {
-        toast({ title: 'User Unblocked' });
-    }
+    if (error) { setBlockedUsers(prev => [...prev, userId]); toast({ variant: 'destructive', title: 'Error unblocking user', description: error.message });
+    } else { toast({ title: 'User Unblocked' }); }
   }, [loggedInUser, supabase, toast]);
 
   const reportUser = useCallback(async (reportedUserId: string, reason: string, messageId?: number) => {
     if (!loggedInUser) return;
-    const { error } = await supabase.from('reports').insert({
-        reported_by: loggedInUser.id,
-        reported_user_id: reportedUserId,
-        reason: reason,
-        message_id: messageId
-    });
-    if (error) {
-        toast({ variant: 'destructive', title: 'Error submitting report', description: error.message });
-    } else {
-        toast({ title: 'Report Submitted', description: 'Thank you for helping keep the community safe.' });
-    }
+    const { error } = await supabase.from('reports').insert({ reported_by: loggedInUser.id, reported_user_id: reportedUserId, reason, message_id: messageId });
+    if (error) { toast({ variant: 'destructive', title: 'Error submitting report', description: error.message });
+    } else { toast({ title: 'Report Submitted', description: 'Thank you for helping keep the community safe.' }); }
   }, [loggedInUser, supabase, toast]);
 
   const forwardMessage = useCallback(async (message: Message, chatIds: number[]) => {
       if (!loggedInUser) return;
-      const originalSender = allUsers.find(u => u.id === message.user_id)?.name || 'Unknown User';
-
-      const forwardPromises = chatIds.map(chatId => {
-          return supabase.from('messages').insert({
-              chat_id: chatId,
-              user_id: loggedInUser.id,
-              content: `Forwarded from **${originalSender}**\n${message.content || ''}`,
-              attachment_url: message.attachment_url,
-              attachment_metadata: message.attachment_metadata,
-          });
-      });
-
+      const originalSender = allUsersRef.current.find(u => u.id === message.user_id)?.name || 'Unknown User';
+      const forwardPromises = chatIds.map(chatId => supabase.from('messages').insert({ chat_id: chatId, user_id: loggedInUser.id, content: `Forwarded from **${originalSender}**\n${message.content || ''}`, attachment_url: message.attachment_url, attachment_metadata: message.attachment_metadata }));
       try {
           const results = await Promise.all(forwardPromises);
           const failed = results.filter(r => r.error);
-          if (failed.length > 0) {
-              toast({ variant: 'destructive', title: 'Some messages failed to forward', description: `Could not forward to ${failed.length} chats.` });
-          } else {
-              toast({ title: 'Message Forwarded', description: `Successfully forwarded to ${chatIds.length} chat(s).` });
-          }
-      } catch (error: any) {
-          toast({ variant: 'destructive', title: 'Error forwarding messages', description: error.message });
-      }
-  }, [loggedInUser, supabase, toast, allUsers]);
+          if (failed.length > 0) { toast({ variant: 'destructive', title: 'Some messages failed to forward', description: `Could not forward to ${failed.length} chats.` });
+          } else { toast({ title: 'Message Forwarded', description: `Successfully forwarded to ${chatIds.length} chat(s).` }); }
+      } catch (error: any) { toast({ variant: 'destructive', title: 'Error forwarding messages', description: error.message }); }
+  }, [loggedInUser, supabase, toast]);
 
   const resetUnreadCount = useCallback((chatId: number) => {
     setChats((current) => {
@@ -471,29 +404,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  if (!isReady) {
+  if (isInitializing) {
     return <AppLoading />
   }
 
   const value = {
-    loggedInUser,
-    allUsers,
-    chats,
-    dmRequests,
-    blockedUsers,
-    sendDmRequest,
-    addChat,
-    updateUser,
-    leaveGroup,
-    deleteGroup,
-    blockUser,
-    unblockUser,
-    reportUser,
-    forwardMessage,
-    themeSettings,
-    setThemeSettings,
-    isReady,
-    resetUnreadCount,
+    loggedInUser, allUsers, chats, dmRequests, blockedUsers, sendDmRequest, addChat, updateUser, leaveGroup, deleteGroup, blockUser, unblockUser, reportUser, forwardMessage, themeSettings, setThemeSettings, isReady, resetUnreadCount,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
@@ -501,8 +417,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
 export function useAppContext() {
   const context = useContext(AppContext)
-  if (context === undefined) {
-    throw new Error("useAppContext must be used within an AppProvider")
-  }
+  if (context === undefined) { throw new Error("useAppContext must be used within an AppProvider") }
   return context
 }
