@@ -134,7 +134,7 @@ export default function ChatPage() {
     if (isAppReady && loggedInUser) {
       fetchChatAndInitialMessages(params.id)
     }
-  }, [params.id, isAppReady, loggedInUser, fetchChatAndInitialMessages])
+  }, [params.id, isAppReady, loggedInUser?.id, fetchChatAndInitialMessages])
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -192,7 +192,7 @@ export default function ChatPage() {
   )
 
   useEffect(() => {
-    if (!isAppReady || !supabase || !params.id || !loggedInUser) return;
+    if (!isAppReady || !supabase || !params.id || !loggedInUser?.id) return;
 
     const handleNewMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
       if (payload.new.user_id === loggedInUser.id) {
@@ -242,7 +242,7 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [params.id, supabase, isAppReady, fetchFullMessage, loggedInUser]);
+  }, [params.id, supabase, isAppReady, fetchFullMessage, loggedInUser?.id]);
 
   if (isInitialLoading) {
     return <ChatPageLoading />
