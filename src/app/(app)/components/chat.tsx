@@ -6,7 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { v4 as uuidv4 } from 'uuid';
 import { useSwipeable } from 'react-swipeable';
-import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply } from 'lucide-react';
+import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -120,6 +120,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
     const [isPinnedDialogOpen, setIsPinnedDialogOpen] = useState(false);
     const [isFetchingLink, setIsFetchingLink] = useState(false);
+    
+    const hasScrolledOnLoad = useRef(false);
 
     useEffect(() => {
         fetch('/api/assets')
@@ -202,7 +204,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         );
     }, [dmRequests, loggedInUser, chatPartner]);
 
-    const jumpToMessage = (messageId: number) => {
+    const jumpToMessage = useCallback((messageId: number) => {
         setIsPinnedDialogOpen(false);
         const messageElement = document.getElementById(`message-${messageId}`);
         if (messageElement) {
@@ -215,22 +217,33 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         } else {
             toast({ variant: 'destructive', title: 'Message not found', description: 'The original message may not be loaded.' });
         }
-    };
+    }, [toast]);
 
     useEffect(() => {
       const scrollContainer = scrollContainerRef.current;
       if (!scrollContainer) return;
     
-      const shouldScrollToBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop <= scrollContainer.clientHeight + 200;
-      
       const highlightedElement = highlightMessageId ? document.getElementById(`message-${highlightMessageId}`) : null;
 
       if (highlightedElement) {
-          jumpToMessage(highlightMessageId as number);
-      } else if (shouldScrollToBottom) {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        jumpToMessage(highlightMessageId as number);
+        hasScrolledOnLoad.current = true; // A highlight counts as an initial scroll
+        return;
       }
-    }, [chat.messages.length, highlightMessageId, scrollContainerRef]);
+      
+      // On initial load, scroll to the bottom instantly
+      if (!hasScrolledOnLoad.current && chat.messages.length > 0) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        hasScrolledOnLoad.current = true;
+        return;
+      }
+
+      // For subsequent new messages, only scroll if user is already near the bottom
+      const isNearBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < 200;
+      if (isNearBottom) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, [chat.messages, highlightMessageId, jumpToMessage, scrollContainerRef]);
 
 
     useEffect(() => {
@@ -721,7 +734,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         const isMyMessage = message.user_id === loggedInUser.id;
         if (!isMyMessage) return null;
         
-        if (typeof message.id === 'string' && message.id.startsWith('temp-')) {
+        if (typeof message.id === 'number' && message.id > 1_000_000_000) {
           return 'pending';
         }
 
@@ -1086,7 +1099,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                                 <Reply className="mr-2 h-4 w-4" />
                                 <span>Reply</span>
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => forwardMessage(message)}>
+                              <DropdownMenuItem onClick={() => setMessageToForward(message)}>
                                   <Share2 className="mr-2 h-4 w-4" />
                                   <span>Forward</span>
                               </DropdownMenuItem>
