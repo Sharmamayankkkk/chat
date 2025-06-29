@@ -79,15 +79,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             { data: allUsersData, error: usersError },
             { data: dmRequestsData, error: dmError },
             { data: blockedData, error: blockedError },
-            { data: unreadData, error: unreadError },
-            { data: chatParticipants, error: participantError },
         ] = await Promise.all([
             supabaseRef.current.from("profiles").select("*").eq("id", user.id).single(),
             supabaseRef.current.from("profiles").select("*"),
             supabaseRef.current.from("dm_requests").select("*, from:profiles!from_user_id(*), to:profiles!to_user_id(*)").or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`),
-            supabaseRef.current.from("blocked_users").select("blocked_user_id").eq("user_id", user.id),
-            supabaseRef.current.rpc("get_unread_counts", { p_user_id: user.id }),
-            supabaseRef.current.from("participants").select("chat_id").eq("user_id", user.id),
+            supabaseRef.current.from("blocked_users").select("blocked_id").eq("blocker_id", user.id),
         ]);
 
         if (profileError) throw profileError;
@@ -96,53 +92,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setLoggedInUser(fullUserProfile);
         setAllUsers((allUsersData as User[]) || []);
         setDmRequests((dmRequestsData as DmRequest[]) || []);
-        setBlockedUsers(blockedData?.map(b => b.blocked_user_id) || []);
+        setBlockedUsers(blockedData?.map(b => b.blocked_id) || []);
 
-        // Now fetch chats
-        const chatIds = chatParticipants?.map(p => p.chat_id) || [];
-        if (chatIds.length > 0) {
-            const { data: chatsData, error: chatListError } = await supabaseRef.current
-                .from("chats")
-                .select(`*, participants:participants!chat_id(*, profiles!user_id(*))`)
-                .in("id", chatIds);
+        // Fetch chats with their participants and last message details
+        const { data: chatsData, error: chatListError } = await supabaseRef.current.rpc('get_user_chats_with_details', { p_user_id: user.id });
+
+        if (chatListError) {
+          console.error("Error fetching chats with details:", chatListError);
+          // Fallback to simpler chat fetching if RPC fails
+          const { data: basicChatsData, error: basicChatsError } = await supabaseRef.current
+            .from('chats')
+            .select('*, participants:participants!chat_id(*, profiles!user_id(*))')
+            .in('id', (await supabaseRef.current.from('participants').select('chat_id').eq('user_id', user.id)).data?.map(p => p.chat_id) || []);
             
-            if (chatListError) throw chatListError;
-
-            const unreadMap = new Map<number, number>();
-            if (unreadData && !unreadError) {
-                (unreadData as any[]).forEach((item: any) => {
-                    unreadMap.set(item.chat_id_result, item.unread_count_result);
-                });
-            }
-
-            const mappedChats = (chatsData || []).map((chat) => ({
-                ...chat,
-                messages: [],
-                unreadCount: unreadMap.get(chat.id) || 0,
-            }));
-
-            // We need to fetch the last message for each chat to sort correctly
-            const lastMessagePromises = chatIds.map(id => 
-                supabaseRef.current.from('messages').select('content, created_at, attachment_url').eq('chat_id', id).order('created_at', { ascending: false }).limit(1).single()
-            );
-            const lastMessagesResults = await Promise.all(lastMessagePromises);
-
-            const finalChats = mappedChats.map((chat, index) => {
-                const lastMessage = lastMessagesResults[index].data;
-                return {
-                    ...chat,
-                    last_message_content: lastMessage?.content || (lastMessage?.attachment_url ? 'Attachment' : null),
-                    last_message_timestamp: lastMessage?.created_at,
-                }
-            })
-
-            setChats(sortChats(finalChats as any));
+            if (basicChatsError) throw basicChatsError;
+            setChats(sortChats((basicChatsData || []) as any));
         } else {
-            setChats([]);
+           setChats(sortChats((chatsData || []) as any));
         }
       
       await requestNotificationPermission();
     } catch (error: any) {
+      console.error("Error loading initial data:", error);
       toast({ variant: "destructive", title: "Error loading data", description: error.message });
       await supabaseRef.current.auth.signOut();
     } finally {
@@ -182,7 +153,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [fetchInitialData]);
 
-  // Real-time subscriptions
+  // Real-time subscriptions for the sidebar and notifications
   useEffect(() => {
     if (!loggedInUser) {
       if (subscriptionsRef.current.length > 0) {
@@ -198,13 +169,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const handleNewMessage = (payload: RealtimePostgresChangesPayload<any>) => {
       const newMessage = payload.new as Message;
       const isMyMessage = newMessage.user_id === loggedInUser.id;
+      const isChatOpen = String(newMessage.chat_id) === pathnameRef.current.split("/chat/")[1];
+
+      // Don't handle updates for the currently open chat, as it has its own listener.
+      // But do handle our own messages to update the sidebar.
+      if (isChatOpen && !isMyMessage) {
+        return;
+      }
 
       setChats(currentChats => {
-        let chatExists = false;
         const newChats = currentChats.map(c => {
           if (c.id === newMessage.chat_id) {
-            chatExists = true;
-            const isChatOpen = String(newMessage.chat_id) === pathnameRef.current.split("/chat/")[1];
             const shouldIncreaseUnread = !isMyMessage && !isChatOpen;
             return {
               ...c,
@@ -215,13 +190,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           return c;
         });
-        // If the chat doesn't exist, it means we were just added.
-        // A full refetch is triggered by the participants subscription, so we don't need to handle it here.
-        return chatExists ? sortChats(newChats) : currentChats;
+        return sortChats(newChats);
       });
 
       if (!isMyMessage && Notification.permission === "granted") {
-        const isChatOpen = String(newMessage.chat_id) === pathnameRef.current.split("/chat/")[1];
         if (!isChatOpen || !document.hasFocus()) {
            const sender = allUsersRef.current.find(u => u.id === newMessage.user_id);
            if (sender) {
@@ -230,14 +202,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
                icon: sender.avatar_url || "/logo/light_KCS.png",
                tag: `chat-${newMessage.chat_id}`
              });
-             notification.onclick = () => routerRef.current.push(`/chat/${newMessage.chat_id}`);
+             notification.onclick = () => {
+                window.focus();
+                notification.close();
+                routerRef.current.push(`/chat/${newMessage.chat_id}`);
+             }
            }
         }
       }
     };
 
     const handleParticipantChange = () => {
-      // Re-fetch all data if our participation in any chat changes.
       if (session) fetchInitialData(session);
     };
     
@@ -247,18 +222,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     
     const handleBlockedUserChange = async () => {
-        const { data } = await supabaseRef.current.from("blocked_users").select("blocked_user_id").eq("user_id", loggedInUser.id)
-        setBlockedUsers(data?.map(b => b.blocked_user_id) || []);
+        const { data } = await supabaseRef.current.from("blocked_users").select("blocked_id").eq("blocker_id", loggedInUser.id)
+        setBlockedUsers(data?.map(b => b.blocked_id) || []);
     };
     
-    const messagesSub = supabaseRef.current.channel('public:messages').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, handleNewMessage).subscribe();
-    const participantsSub = supabaseRef.current.channel('public:participants').on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, handleParticipantChange).subscribe();
-    const dmRequestsSub = supabaseRef.current.channel('dm-requests-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, handleDmRequestChange).subscribe();
-    const blockedUsersSub = supabaseRef.current.channel('blocked-users-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `user_id.eq.${loggedInUser.id}` }, handleBlockedUserChange).subscribe();
+    // Listen to all message inserts user is involved in.
+    const chatIds = chats.map(c => c.id).join(',');
+    const messagesSub = supabaseRef.current.channel('public:messages:sidebar')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=in.(${chatIds})` }, handleNewMessage)
+        .subscribe();
+
+    const participantsSub = supabaseRef.current.channel('public:participants:sidebar').on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, handleParticipantChange).subscribe();
+    const dmRequestsSub = supabaseRef.current.channel('dm-requests-changes:sidebar').on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, handleDmRequestChange).subscribe();
+    const blockedUsersSub = supabaseRef.current.channel('blocked-users-changes:sidebar').on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, handleBlockedUserChange).subscribe();
 
     subscriptionsRef.current = [messagesSub, participantsSub, dmRequestsSub, blockedUsersSub];
 
-  }, [loggedInUser, session, fetchInitialData]);
+    return () => {
+        subscriptionsRef.current.forEach(sub => sub.unsubscribe());
+        subscriptionsRef.current = [];
+    }
+
+  }, [loggedInUser, session, fetchInitialData, chats]);
 
   const setThemeSettings = useCallback((newSettings: Partial<ThemeSettings>) => {
     setThemeSettingsState((prev) => {
@@ -302,14 +287,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const blockUser = useCallback(async (userId: string) => {
     if (!loggedInUser) return;
-    const { error } = await supabaseRef.current.from("blocked_users").insert({ user_id: loggedInUser.id, blocked_user_id: userId });
+    const { error } = await supabaseRef.current.from("blocked_users").insert({ blocker_id: loggedInUser.id, blocked_id: userId });
     if (error) toast({ variant: 'destructive', title: 'Error', description: error.message });
     else toast({ title: 'User Blocked' });
   }, [loggedInUser, toast]);
 
   const unblockUser = useCallback(async (userId: string) => {
     if (!loggedInUser) return;
-    const { error } = await supabaseRef.current.from("blocked_users").delete().match({ user_id: loggedInUser.id, blocked_user_id: userId });
+    const { error } = await supabaseRef.current.from("blocked_users").delete().match({ blocker_id: loggedInUser.id, blocked_id: userId });
     if (error) toast({ variant: 'destructive', title: 'Error', description: error.message });
     else toast({ title: 'User Unblocked' });
   }, [loggedInUser, toast]);
@@ -333,7 +318,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const resetUnreadCount = useCallback((chatId: number) => {
     setChats(current => current.map(c => (c.id === chatId ? { ...c, unreadCount: 0 } : c)));
-  }, []);
+    // Also mark as read in DB
+    supabaseRef.current.rpc('mark_chat_as_read', { p_chat_id: chatId, p_user_id: loggedInUser?.id }).then(({error}) => {
+        if(error) console.error("Failed to mark chat as read:", error);
+    });
+  }, [loggedInUser]);
 
   if (isInitializing) {
     return <AppLoading />;

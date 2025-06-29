@@ -6,7 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { v4 as uuidv4 } from 'uuid';
 import { useSwipeable } from 'react-swipeable';
-import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock, CircleSlash, ArrowDown, AtSign } from 'lucide-react';
+import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock, CircleSlash, ArrowDown, AtSign, Image as ImageIcon } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,11 +85,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         sendDmRequest,
         leaveGroup,
         deleteGroup,
-        blockedUsers,
-        blockUser,
-        unblockUser,
-        reportUser,
-        forwardMessage,
     } = useAppContext();
     const [message, setMessage] = useState('');
     const [caption, setCaption] = useState('');
@@ -123,7 +118,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const [messageToReport, setMessageToReport] = useState<Message | null>(null);
 
     const [isPinnedDialogOpen, setIsPinnedDialogOpen] = useState(false);
-    const [isFetchingLink, setIsFetchingLink] = useState(false);
     
     const [showScrollToBottom, setShowScrollToBottom] = useState(false);
     const [firstUnreadMentionId, setFirstUnreadMentionId] = useState<number | null>(null);
@@ -151,7 +145,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             const firstMention = unreadMessages.find(m => m.content && mentionRegex.test(m.content));
 
             if (firstMention) {
-                setFirstUnreadMentionId(firstMention.id);
+                setFirstUnreadMentionId(firstMention.id as number);
             }
         }
     }, [initialUnreadCount, chat.messages, loggedInUser?.username]);
@@ -188,6 +182,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const canPostInChannel = useMemo(() => 
         isChannel && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin,
     [chat, loggedInUser.id, isChannel]);
+    
+    const { blockedUsers, blockUser, unblockUser } = useAppContext();
 
     const isChatPartnerBlocked = useMemo(() => {
         if (!chatPartner) return false;
@@ -198,7 +194,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         isGroup && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin, 
     [chat, loggedInUser.id, isGroup]);
     
-    const pinnedMessages = useMemo(() => chat.messages.filter(m => m.is_pinned), [chat.messages]);
+    const pinnedMessages = useMemo(() => (chat.messages || []).filter(m => m.is_pinned), [chat.messages]);
 
     const isDmRestricted = useMemo(() => {
         if (chat.type !== 'dm' || !chatPartner || loggedInUser.is_admin || chatPartner.is_admin) {
@@ -217,17 +213,17 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         
         const isChatWithGurudev = chatPartner?.role === 'gurudev';
         if (isChatWithGurudev && !loggedInUser.is_admin) {
-            if (chat.messages.length > 0) return false;
+            if ((chat.messages || []).length > 0) return false;
             return !hasPermission;
         }
 
         if (hasPermission) return false;
 
-        if(chat.messages.length === 0 && !hasPermission) return true;
+        if((chat.messages || []).length === 0 && !hasPermission) return true;
 
         return !hasPermission;
         
-    }, [chat.type, loggedInUser, chatPartner, dmRequests, chat.messages.length]);
+    }, [chat.type, loggedInUser, chatPartner, dmRequests, chat.messages]);
     
     const existingRequest = useMemo(() => {
         if (!chatPartner) return null;
@@ -259,18 +255,16 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
       const highlightedElement = highlightMessageId ? document.getElementById(`message-${highlightMessageId}`) : null;
 
       if (highlightedElement) {
-        jumpToMessage(highlightMessageId);
+        jumpToMessage(highlightMessageId as number);
         return;
       }
       
-      // On initial render, always scroll to bottom
       if (!hasScrolledOnLoad.current) {
         messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
         hasScrolledOnLoad.current = true;
       }
     }, [highlightMessageId, jumpToMessage, scrollContainerRef]);
     
-    // Smooth scroll for subsequent new messages
     useEffect(() => {
       const scrollContainer = scrollContainerRef.current;
       if (!scrollContainer) return;
@@ -295,9 +289,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         let attachmentUrl: string | null = null;
         let attachmentMetadata: AttachmentMetadata | null = null;
         
+        // This is the temporary ID for the optimistic update
         const tempId = `temp-${uuidv4()}`;
+
+        // Create the optimistic message object
         const newMessageObject: Message = {
-          id: tempId as any, // Temporary ID is a string
+          id: tempId,
           created_at: new Date().toISOString(),
           chat_id: chat.id,
           user_id: loggedInUser.id,
@@ -341,31 +338,39 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             }
             
             let finalContent = contentToSave ?? content;
-            let finalAttachmentMetadata = attachmentMetadata;
             
-            const { data: newMessage, error } = await supabase
+            // Insert the message into the database
+            const { data: insertedMessage, error } = await supabase
                 .from('messages')
                 .insert({
                     chat_id: chat.id,
                     user_id: loggedInUser.id,
                     content: finalContent,
                     attachment_url: attachmentUrl,
-                    attachment_metadata: finalAttachmentMetadata,
+                    attachment_metadata: attachmentMetadata,
                     reply_to_message_id: replyingTo?.id,
                 })
-                .select('*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))')
+                .select('id') // Only select ID to confirm insertion
                 .single();
 
             if (error) throw error;
+            if (!insertedMessage) throw new Error("Failed to insert message");
+
+            // Fetch the full message to replace the optimistic one
+            const { data: fullMessage, error: fetchError } = await supabase
+              .from("messages")
+              .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
+              .eq("id", insertedMessage.id)
+              .single();
             
-            if (newMessage) {
-              setMessages(current => current.map(m => m.id === tempId ? (newMessage as Message) : m));
-            } else {
-              throw new Error("Failed to send message, no data returned.");
-            }
+            if (fetchError) throw fetchError;
+            
+            // Replace the optimistic message with the real one from the DB
+            setMessages(current => current.map(m => m.id === tempId ? (fullMessage as Message) : m));
 
         } catch (error: any) {
              toast({ variant: 'destructive', title: "Error sending message", description: error.message });
+             // Remove the failed optimistic message
              setMessages(current => current.filter(m => m.id !== tempId));
         } finally {
             setIsSending(false);
@@ -385,7 +390,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         };
 
         const newMessageObject: Message = {
-            id: tempId as any,
+            id: tempId,
             created_at: new Date().toISOString(),
             chat_id: chat.id,
             user_id: loggedInUser.id,
@@ -405,7 +410,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
         
         try {
-            const { data: newMessage, error } = await supabase
+            const { data: insertedMessage, error } = await supabase
                 .from('messages')
                 .insert({
                     chat_id: chat.id,
@@ -415,14 +420,20 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     attachment_metadata: attachmentMetadata,
                     reply_to_message_id: replyingTo?.id,
                 })
-                .select('*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))')
+                .select('id')
                 .single();
     
             if (error) throw error;
 
-            if (newMessage) {
-              setMessages(current => current.map(m => m.id === tempId ? (newMessage as Message) : m));
-            }
+            const { data: fullMessage, error: fetchError } = await supabase
+              .from("messages")
+              .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
+              .eq("id", insertedMessage.id)
+              .single();
+
+            if (fetchError) throw fetchError;
+
+            setMessages(current => current.map(m => m.id === tempId ? (fullMessage as Message) : m));
             
         } catch (error: any) {
              toast({ variant: 'destructive', title: "Error sending sticker", description: error.message });
@@ -478,7 +489,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
     const handleStartEdit = (message: Message) => {
         setReplyingTo(null);
-        setEditingMessage({ id: message.id, content: message.content || '' });
+        setEditingMessage({ id: message.id as number, content: message.content || '' });
     };
 
     const handleStartReply = (message: Message) => {
@@ -528,7 +539,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         // Optimistic update
         setMessages(prev => prev.map(m => m.id === message.id ? { ...m, reactions: newReactions } : m));
 
-        // Call the new RPC function
         const { error } = await supabase
             .rpc('handle_reaction', {
                 p_message_id: message.id,
@@ -537,7 +547,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             });
         
         if (error) {
-            // Revert on error
             setMessages(prev => prev.map(m => m.id === message.id ? { ...m, reactions: originalReactions } : m));
             toast({ variant: 'destructive', title: 'Error updating reaction', description: error.message });
         }
@@ -734,7 +743,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         const originalIsStarred = messageToStar.is_starred;
         const newIsStarred = !originalIsStarred;
 
-        // Optimistic update
         setMessages(prev => prev.map(m => 
             m.id === messageToStar.id ? { ...m, is_starred: newIsStarred } : m
         ));
@@ -745,7 +753,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             .eq('id', messageToStar.id);
         
         if (error) {
-            // Revert on error
             setMessages(prev => prev.map(m => 
                 m.id === messageToStar.id ? { ...m, is_starred: originalIsStarred } : m
             ));
@@ -759,7 +766,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         const originalIsPinned = messageToPin.is_pinned;
         const newIsPinned = !originalIsPinned;
 
-        // Optimistic update
         setMessages(prev => prev.map(m =>
             m.id === messageToPin.id ? { ...m, is_pinned: newIsPinned } : m
         ));
@@ -770,7 +776,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             .eq('id', messageToPin.id);
 
         if (error) {
-            // Revert on error
             setMessages(prev => prev.map(m =>
                 m.id === messageToPin.id ? { ...m, is_pinned: originalIsPinned } : m
             ));
@@ -1048,8 +1053,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     }
 
     const messagesWithSeparator = useMemo(() => {
-        if (!initialUnreadCount || initialUnreadCount <= 0 || initialUnreadCount >= chat.messages.length) {
-          return chat.messages;
+        if (!initialUnreadCount || initialUnreadCount <= 0 || initialUnreadCount >= (chat.messages || []).length) {
+          return chat.messages || [];
         }
     
         const unreadIndex = chat.messages.length - initialUnreadCount;
@@ -1139,7 +1144,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
       <div
         className="flex items-center gap-2 p-2 mb-2 rounded-md cursor-pointer border-l-2 bg-foreground/[.07] dark:bg-foreground/[.1] hover:bg-foreground/[.1] dark:hover:bg-foreground/[.15] transition-colors"
         style={{ borderColor: themeSettings.usernameColor }}
-        onClick={() => jumpToMessage(repliedTo.id)}
+        onClick={() => jumpToMessage(repliedTo.id as number)}
       >
         <div className="flex-1 overflow-hidden">
           <p className="font-semibold text-sm truncate" style={{ color: themeSettings.usernameColor }}>
@@ -1267,7 +1272,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                                       <span>Report Message</span>
                                   </DropdownMenuItem>
                               )}
-                              {isMyMessage && (
+                              {isMyMessage && typeof message.id === 'number' && (
                               <>
                                   <DropdownMenuSeparator />
                                   {message.content && (
@@ -1276,7 +1281,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                                           <span>Edit</span>
                                       </DropdownMenuItem>
                                   )}
-                                  <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteForEveryone(message.id)}>
+                                  <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteForEveryone(message.id as number)}>
                                       <Trash2 className="mr-2 h-4 w-4" />
                                       <span>Delete for everyone</span>
                                   </DropdownMenuItem>
@@ -1402,7 +1407,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                     <DropdownMenuItem asChild><Link href={isGroup ? `/group/${chat.id}` : `/profile/${chatPartner?.username || ''}`}>View Info</Link></DropdownMenuItem>
-                    {chatPartner && <DropdownMenuItem onClick={() => reportUser(chatPartner.id, 'No reason specified')}>Report User</DropdownMenuItem>}
+                    {chatPartner && <DropdownMenuItem onClick={() => { setMessageToReport(null); setIsReportDialogOpen(true); }}>Report User</DropdownMenuItem>}
                     {chatPartner && (
                       <DropdownMenuItem onClick={() => isChatPartnerBlocked ? unblockUser(chatPartner.id) : blockUser(chatPartner.id)}>
                         {isChatPartnerBlocked ? 'Unblock User' : 'Block User'}
@@ -1425,7 +1430,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                       <Loader2 className="h-6 w-6 animate-spin text-primary" />
                     </div>
                   )}
-                  {!hasMoreMessages && chat.messages.length > 0 && (
+                  {!hasMoreMessages && (chat.messages || []).length > 0 && (
                     <div className="text-center text-xs text-muted-foreground py-4">
                       You've reached the beginning of this chat.
                     </div>
@@ -1597,7 +1602,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                         <Tabs defaultValue="emoji" className="w-full">
                             <TabsList className="grid w-full grid-cols-3">
                                 <TabsTrigger value="custom-emoji">
-                                    <Image src="/logo/light_KCS.png" alt="custom" width={16} height={16} className="mr-2 dark:invert" />
+                                    <ImageIcon className="mr-2 h-4 w-4" />
                                     Official
                                 </TabsTrigger>
                                 <TabsTrigger value="emoji">

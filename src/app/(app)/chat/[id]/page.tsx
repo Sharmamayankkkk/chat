@@ -29,7 +29,6 @@ export default function ChatPage() {
   const highlightMessageId = searchParams.get("highlight")
 
   const { loggedInUser, isReady: isAppReady, resetUnreadCount, chats } = useAppContext()
-  const [localChat, setLocalChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [isInitialLoading, setIsInitialLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -40,33 +39,18 @@ export default function ChatPage() {
   const topMessageSentinelRef = useRef<HTMLDivElement>(null)
   
   const chatId = Number(params.id);
+  const chat = useMemo(() => chats.find(c => c.id === chatId), [chats, chatId]);
 
   const initialUnreadCount = useMemo(() => {
-    if (!isAppReady || !chatId) return 0;
-    const chatInList = chats.find(c => c.id === chatId);
-    return chatInList?.unreadCount || 0;
-  }, [isAppReady, chatId, chats]);
+    if (!isAppReady || !chat) return 0;
+    return chat?.unreadCount || 0;
+  }, [isAppReady, chat]);
 
   const fetchChatAndInitialMessages = useCallback(
     async (id: number) => {
       if (!loggedInUser?.id) return;
       setIsInitialLoading(true);
       try {
-        const { data: chatData, error: chatError } = await supabaseRef.current
-          .from("chats")
-          .select(`*, participants:participants!chat_id(*, profiles!user_id(*))`)
-          .eq("id", id)
-          .single()
-
-        if (chatError || !chatData) throw chatError
-
-        const isParticipant = chatData.participants.some(p => p.user_id === loggedInUser?.id);
-        if (!isParticipant) {
-          throw new Error("You are not a member of this chat.");
-        }
-        
-        setLocalChat(chatData as unknown as Chat)
-
         const { data: messagesData, error: messagesError } = await supabaseRef.current
           .from("messages")
           .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
@@ -81,7 +65,6 @@ export default function ChatPage() {
         setHasMore(messagesData.length === MESSAGES_PER_PAGE)
       } catch (error) {
         console.error("Error fetching chat data:", error)
-        setLocalChat(null) // This will trigger notFound() in the render
       } finally {
         setIsInitialLoading(false)
       }
@@ -131,12 +114,14 @@ export default function ChatPage() {
     }
   }, [isLoadingMore, hasMore, messages, chatId])
 
+  // Fetch initial messages when chat ID changes
   useEffect(() => {
-    if (isAppReady && loggedInUser?.id) {
+    if (isAppReady && loggedInUser?.id && chatId) {
       fetchChatAndInitialMessages(chatId)
     }
   }, [chatId, isAppReady, loggedInUser?.id, fetchChatAndInitialMessages])
 
+  // Set up intersection observer for infinite scroll
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -159,21 +144,15 @@ export default function ChatPage() {
     }
   }, [loadMoreMessages])
 
+  // Mark chat as read
   useEffect(() => {
-    if (chatId && loggedInUser?.id && messages.length > 0) {
-      const markAsRead = async () => {
-        await supabaseRef.current.rpc("mark_messages_as_read", {
-          chat_id_param: chatId,
-          user_id_param: loggedInUser.id,
-        })
-        resetUnreadCount(chatId)
-      }
+    if (chatId && loggedInUser?.id) {
+      const markAsRead = () => resetUnreadCount(chatId);
       markAsRead()
-      const focusListener = () => document.hasFocus() && markAsRead()
-      window.addEventListener("focus", focusListener)
-      return () => window.removeEventListener("focus", focusListener)
+      window.addEventListener("focus", markAsRead)
+      return () => window.removeEventListener("focus", markAsRead)
     }
-  }, [chatId, loggedInUser?.id, resetUnreadCount, messages.length])
+  }, [chatId, loggedInUser?.id, resetUnreadCount]);
 
   const fetchFullMessage = useCallback(
     async (messageId: number) => {
@@ -192,21 +171,25 @@ export default function ChatPage() {
     [],
   )
 
+  // Set up real-time subscription for this chat only
   useEffect(() => {
-    if (!isAppReady || !chatId || !loggedInUser?.id) return;
+    if (!chatId || !loggedInUser?.id) return;
 
     const handleNewMessage = async (payload: RealtimePostgresChangesPayload<Message>) => {
-      // Ignore own messages because they are added optimistically
-      if (payload.new.user_id === loggedInUser.id) {
-        return;
+      const newMessageId = payload.new.id as number;
+      // If we already have this message (e.g. from an optimistic update), just update its ID to be the final one
+      const optimisticMessageIndex = messages.findIndex(m => m.id === `temp-${newMessageId}`);
+      if (optimisticMessageIndex > -1) {
+          setMessages(current => current.map(m => m.id === `temp-${newMessageId}` ? { ...m, id: newMessageId } : m));
+          return;
       }
       
-      const fullMessage = await fetchFullMessage(payload.new.id);
+      const fullMessage = await fetchFullMessage(newMessageId);
       if (fullMessage) {
-        setMessages((current) => {
-          if (current.some((m) => m.id === fullMessage.id)) return current;
-          return [...current, fullMessage];
-        });
+        // Only add if it's not our own message and we don't already have it
+        if (fullMessage.user_id !== loggedInUser.id && !messages.some(m => m.id === fullMessage.id)) {
+          setMessages((current) => [...current, fullMessage]);
+        }
       }
     };
 
@@ -230,19 +213,19 @@ export default function ChatPage() {
     return () => {
       supabaseRef.current.removeChannel(channel)
     }
-  }, [chatId, isAppReady, fetchFullMessage, loggedInUser?.id]);
+  }, [chatId, fetchFullMessage, loggedInUser?.id, messages]);
 
   if (isInitialLoading) {
     return <ChatPageLoading />
   }
 
-  if (!localChat || !loggedInUser) {
+  if (!chat || !loggedInUser) {
     notFound()
   }
 
   return (
     <ChatUI
-      chat={{ ...localChat, messages }}
+      chat={{ ...chat, messages }}
       loggedInUser={loggedInUser}
       setMessages={setMessages}
       highlightMessageId={highlightMessageId ? Number(highlightMessageId) : null}

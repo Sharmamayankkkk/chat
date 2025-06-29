@@ -35,7 +35,7 @@ export type AttachmentMetadata = {
 
 // Matches public.messages table, with sender profile joined
 export type Message = {
-  id: number; // bigint
+  id: number | string; // Allow string for temporary optimistic IDs
   created_at: string; // timestamp with time zone
   chat_id: number; // bigint
   user_id: string; // uuid
