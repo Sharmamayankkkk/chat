@@ -13,7 +13,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined)
 
 // Helper function to sort chats by the most recent message
 const sortChats = (chatArray: Chat[]) => {
-  return [...chatArray].sort((a, b) => {
+  return [...(chatArray || [])].sort((a, b) => {
     const dateA = a.last_message_timestamp ? new Date(a.last_message_timestamp) : new Date(0);
     const dateB = b.last_message_timestamp ? new Date(b.last_message_timestamp) : new Date(0);
     return dateB.getTime() - dateA.getTime();
@@ -54,7 +54,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   
-  // Use refs for state accessed in callbacks to prevent stale closures
   const allUsersRef = useRef(allUsers);
   useEffect(() => { allUsersRef.current = allUsers }, [allUsers]);
   const pathnameRef = useRef(pathname);
@@ -73,7 +72,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
         const { user } = session;
 
-        // Fetch non-chat-specific data first
         const [
             { data: profile, error: profileError },
             { data: allUsersData, error: usersError },
@@ -94,27 +92,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setDmRequests((dmRequestsData as DmRequest[]) || []);
         setBlockedUsers(blockedData?.map(b => b.blocked_id) || []);
 
-        // Fetch chats with their participants and last message details
-        const { data: chatsData, error: chatListError } = await supabaseRef.current.rpc('get_user_chats_with_details', { p_user_id: user.id });
+        const { data: participantData, error: participantError } = await supabaseRef.current
+            .from('participants')
+            .select('chat_id')
+            .eq('user_id', user.id);
 
-        if (chatListError) {
-          console.error("Error fetching chats with details:", chatListError);
-          // Fallback to simpler chat fetching if RPC fails
-          const { data: basicChatsData, error: basicChatsError } = await supabaseRef.current
-            .from('chats')
-            .select('*, participants:participants!chat_id(*, profiles!user_id(*))')
-            .in('id', (await supabaseRef.current.from('participants').select('chat_id').eq('user_id', user.id)).data?.map(p => p.chat_id) || []);
+        if (participantError) throw participantError;
+
+        const chatIds = participantData.map(p => p.chat_id);
+        let allChats: any[] = [];
+
+        if (chatIds.length > 0) {
+            const { data: chatsData, error: chatListError } = await supabaseRef.current
+                .from('chats')
+                .select(`*, participants:participants!chat_id(*, profiles!user_id(*))`)
+                .in('id', chatIds);
+
+            if (chatListError) throw chatListError;
             
-            if (basicChatsError) throw basicChatsError;
-            setChats(sortChats((basicChatsData || []) as any));
-        } else {
-           setChats(sortChats((chatsData || []) as any));
+            allChats = chatsData.map(chat => ({
+                ...chat,
+                messages: [],
+                unreadCount: 0, 
+                last_message_content: 'Click to view messages',
+                last_message_timestamp: chat.created_at,
+            }));
         }
+        
+        setChats(sortChats(allChats));
       
       await requestNotificationPermission();
     } catch (error: any) {
       console.error("Error loading initial data:", error);
-      toast({ variant: "destructive", title: "Error loading data", description: error.message });
+      toast({ variant: "destructive", title: "Error loading data", description: "Could not load initial application data. Please try refreshing." });
       await supabaseRef.current.auth.signOut();
     } finally {
       setIsInitializing(false);
@@ -122,7 +132,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [toast, requestNotificationPermission]);
   
-  // Auth state change handler
   useEffect(() => {
     try {
       const savedSettings = localStorage.getItem("themeSettings");
@@ -134,7 +143,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSession(session);
         if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
           await fetchInitialData(session);
-        } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
+        } else if (!session) {
           setLoggedInUser(null);
           setChats([]);
           setAllUsers([]);
@@ -153,7 +162,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [fetchInitialData]);
 
-  // Real-time subscriptions for the sidebar and notifications
   useEffect(() => {
     if (!loggedInUser) {
       if (subscriptionsRef.current.length > 0) {
@@ -163,7 +171,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return;
     };
     
-    // Ensure we only have one set of subscriptions running
     if (subscriptionsRef.current.length > 0) return;
 
     const handleNewMessage = (payload: RealtimePostgresChangesPayload<any>) => {
@@ -171,11 +178,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const isMyMessage = newMessage.user_id === loggedInUser.id;
       const isChatOpen = String(newMessage.chat_id) === pathnameRef.current.split("/chat/")[1];
 
-      // Don't handle updates for the currently open chat, as it has its own listener.
-      // But do handle our own messages to update the sidebar.
-      if (isChatOpen && !isMyMessage) {
-        return;
-      }
+      if (isChatOpen && !isMyMessage) return;
 
       setChats(currentChats => {
         const newChats = currentChats.map(c => {
@@ -185,7 +188,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               ...c,
               last_message_content: newMessage.attachment_url ? "Sent an attachment" : newMessage.content,
               last_message_timestamp: newMessage.created_at,
-              unreadCount: shouldIncreaseUnread ? (c.unreadCount || 0) + 1 : c.unreadCount,
+              unreadCount: shouldIncreaseUnread ? (c.unreadCount || 0) + 1 : (c.unreadCount || 0),
             };
           }
           return c;
@@ -226,17 +229,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setBlockedUsers(data?.map(b => b.blocked_id) || []);
     };
     
-    // Listen to all message inserts user is involved in.
-    const chatIds = chats.map(c => c.id).join(',');
-    const messagesSub = supabaseRef.current.channel('public:messages:sidebar')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=in.(${chatIds})` }, handleNewMessage)
-        .subscribe();
-
+    const chatIds = chats.map(c => c.id).join(',') || null;
+    let messagesSub: any = null;
+    if (chatIds) {
+        messagesSub = supabaseRef.current.channel('public:messages:sidebar')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=in.(${chatIds})` }, handleNewMessage)
+            .subscribe();
+    }
+    
     const participantsSub = supabaseRef.current.channel('public:participants:sidebar').on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, handleParticipantChange).subscribe();
     const dmRequestsSub = supabaseRef.current.channel('dm-requests-changes:sidebar').on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, handleDmRequestChange).subscribe();
     const blockedUsersSub = supabaseRef.current.channel('blocked-users-changes:sidebar').on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, handleBlockedUserChange).subscribe();
-
-    subscriptionsRef.current = [messagesSub, participantsSub, dmRequestsSub, blockedUsersSub];
+    
+    const subs = [participantsSub, dmRequestsSub, blockedUsersSub];
+    if (messagesSub) subs.push(messagesSub);
+    subscriptionsRef.current = subs;
 
     return () => {
         subscriptionsRef.current.forEach(sub => sub.unsubscribe());
@@ -318,11 +325,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const resetUnreadCount = useCallback((chatId: number) => {
     setChats(current => current.map(c => (c.id === chatId ? { ...c, unreadCount: 0 } : c)));
-    // Also mark as read in DB
-    supabaseRef.current.rpc('mark_chat_as_read', { p_chat_id: chatId, p_user_id: loggedInUser?.id }).then(({error}) => {
-        if(error) console.error("Failed to mark chat as read:", error);
-    });
-  }, [loggedInUser]);
+  }, []);
 
   if (isInitializing) {
     return <AppLoading />;

@@ -45,6 +45,8 @@ import { ForwardMessageDialog } from './forward-message-dialog';
 import { ReportDialog } from './report-dialog';
 import { PinnedMessagesDialog } from './pinned-messages-dialog';
 import { LinkPreview } from './link-preview';
+import { Icons } from "@/components/icons";
+import { ImageViewerDialog } from './image-viewer';
 
 interface ChatProps {
   chat: Chat;
@@ -85,6 +87,11 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         sendDmRequest,
         leaveGroup,
         deleteGroup,
+        blockUser,
+        unblockUser,
+        blockedUsers,
+        reportUser,
+        forwardMessage,
     } = useAppContext();
     const [message, setMessage] = useState('');
     const [caption, setCaption] = useState('');
@@ -122,6 +129,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const [showScrollToBottom, setShowScrollToBottom] = useState(false);
     const [firstUnreadMentionId, setFirstUnreadMentionId] = useState<number | null>(null);
     
+    const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
+    const [imageViewerSrc, setImageViewerSrc] = useState('');
+
     const hasScrolledOnLoad = useRef(false);
 
     useEffect(() => {
@@ -138,7 +148,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     }, [scrollContainerRef]);
 
     useEffect(() => {
-        if (initialUnreadCount > 0 && chat.messages.length > 0 && loggedInUser?.username) {
+        if (initialUnreadCount > 0 && chat.messages && chat.messages.length > 0 && loggedInUser?.username) {
             const unreadMessages = chat.messages.slice(-initialUnreadCount);
             const mentionRegex = new RegExp(`@${loggedInUser.username}|@everyone`, 'i');
             
@@ -183,8 +193,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         isChannel && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin,
     [chat, loggedInUser.id, isChannel]);
     
-    const { blockedUsers, blockUser, unblockUser } = useAppContext();
-
     const isChatPartnerBlocked = useMemo(() => {
         if (!chatPartner) return false;
         return blockedUsers.includes(chatPartner.id);
@@ -256,6 +264,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
       if (highlightedElement) {
         jumpToMessage(highlightMessageId as number);
+        hasScrolledOnLoad.current = true; // prevent scrolling to bottom
         return;
       }
       
@@ -263,17 +272,17 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
         hasScrolledOnLoad.current = true;
       }
-    }, [highlightMessageId, jumpToMessage, scrollContainerRef]);
+    }, [chat.messages, highlightMessageId, jumpToMessage, scrollContainerRef]);
     
     useEffect(() => {
-      const scrollContainer = scrollContainerRef.current;
-      if (!scrollContainer) return;
-
-      const isNearBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < 200;
-      if (isNearBottom) {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }
-    }, [chat.messages, scrollContainerRef]);
+        const scrollContainer = scrollContainerRef.current;
+        if (!scrollContainer) return;
+    
+        const isNearBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < 200;
+        if (isNearBottom) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [chat.messages?.length, scrollContainerRef]);
 
 
     useEffect(() => {
@@ -289,10 +298,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         let attachmentUrl: string | null = null;
         let attachmentMetadata: AttachmentMetadata | null = null;
         
-        // This is the temporary ID for the optimistic update
         const tempId = `temp-${uuidv4()}`;
 
-        // Create the optimistic message object
         const newMessageObject: Message = {
           id: tempId,
           created_at: new Date().toISOString(),
@@ -339,7 +346,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             
             let finalContent = contentToSave ?? content;
             
-            // Insert the message into the database
             const { data: insertedMessage, error } = await supabase
                 .from('messages')
                 .insert({
@@ -350,13 +356,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     attachment_metadata: attachmentMetadata,
                     reply_to_message_id: replyingTo?.id,
                 })
-                .select('id') // Only select ID to confirm insertion
+                .select('id')
                 .single();
 
             if (error) throw error;
             if (!insertedMessage) throw new Error("Failed to insert message");
-
-            // Fetch the full message to replace the optimistic one
+            
             const { data: fullMessage, error: fetchError } = await supabase
               .from("messages")
               .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
@@ -365,12 +370,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             
             if (fetchError) throw fetchError;
             
-            // Replace the optimistic message with the real one from the DB
             setMessages(current => current.map(m => m.id === tempId ? (fullMessage as Message) : m));
 
         } catch (error: any) {
              toast({ variant: 'destructive', title: "Error sending message", description: error.message });
-             // Remove the failed optimistic message
              setMessages(current => current.filter(m => m.id !== tempId));
         } finally {
             setIsSending(false);
@@ -461,7 +464,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         const originalMessage = chat.messages.find(m => m.id === messageId);
         if (!originalMessage) return;
 
-        // Optimistic update
         const updatedMessage = { ...originalMessage, content: DELETED_MESSAGE_MARKER, attachment_url: null, attachment_metadata: null, reactions: null };
         setMessages(prev => prev.map(m => m.id === messageId ? updatedMessage : m));
 
@@ -477,7 +479,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             .eq('id', messageId);
 
         if (error) {
-            setMessages(prev => prev.map(m => m.id === messageId ? originalMessage : m)); // Revert
+            setMessages(prev => prev.map(m => m.id === messageId ? originalMessage : m));
             toast({ variant: 'destructive', title: "Error deleting message", description: error.message });
         }
     };
@@ -540,11 +542,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         setMessages(prev => prev.map(m => m.id === message.id ? { ...m, reactions: newReactions } : m));
 
         const { error } = await supabase
-            .rpc('handle_reaction', {
-                p_message_id: message.id,
-                p_user_id: loggedInUser.id,
-                p_emoji: emoji
-            });
+            .from('messages')
+            .update({ reactions: newReactions })
+            .eq('id', message.id);
         
         if (error) {
             setMessages(prev => prev.map(m => m.id === message.id ? { ...m, reactions: originalReactions } : m));
@@ -944,7 +944,13 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 }
                 if (type.startsWith('image/')) {
                     return (
-                        <div className="relative aspect-video w-full max-w-sm rounded-md overflow-hidden">
+                        <button
+                          className="relative aspect-video w-full max-w-sm rounded-md overflow-hidden"
+                          onClick={() => {
+                            setImageViewerSrc(message.attachment_url!);
+                            setIsImageViewerOpen(true);
+                          }}
+                        >
                             <Image
                                 src={message.attachment_url!}
                                 alt={name}
@@ -952,7 +958,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                                 className="object-cover"
                                 sizes="(max-width: 768px) 80vw, 320px"
                             />
-                        </div>
+                        </button>
                     );
                 }
                 if (type.startsWith('audio/')) {
@@ -1053,7 +1059,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     }
 
     const messagesWithSeparator = useMemo(() => {
-        if (!initialUnreadCount || initialUnreadCount <= 0 || initialUnreadCount >= (chat.messages || []).length) {
+        if (!initialUnreadCount || initialUnreadCount <= 0 || !chat.messages || initialUnreadCount >= chat.messages.length) {
           return chat.messages || [];
         }
     
@@ -1306,6 +1312,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
   return (
     <div className="flex h-dvh flex-col">
+        <ImageViewerDialog open={isImageViewerOpen} onOpenChange={setIsImageViewerOpen} src={imageViewerSrc} />
         {chatPartner && <RequestDmDialog open={isRequestDmOpen} onOpenChange={setIsRequestDmOpen} targetUser={chatPartner} />}
         <ForwardMessageDialog messageToForward={messageToForward} onOpenChange={(open) => !open && setMessageToForward(null)} />
         {chatPartner && <ReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} userToReport={chatPartner} messageToReport={messageToReport} />}
@@ -1315,7 +1322,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             messages={pinnedMessages}
             onJumpToMessage={jumpToMessage}
             onUnpinMessage={(id) => {
-                const msg = chat.messages.find(m => m.id === id);
+                const msg = chat.messages?.find(m => m.id === id);
                 if (msg) handleTogglePin(msg);
             }}
             isAdmin={isGroupAdmin || false}
@@ -1436,8 +1443,11 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     </div>
                   )}
                 </div>
-                {messagesWithSeparator
-                .filter(message => !('user_id' in message) || !blockedUsers.includes(message.user_id))
+                {(messagesWithSeparator || [])
+                .filter(item => {
+                    if (!('user_id' in item) || !item.user_id) return true; // Keep separators
+                    return !blockedUsers.includes(item.user_id);
+                })
                 .map((item) => {
                     if ('type' in item && item.type === 'unread_separator') {
                         return <UnreadSeparator key="unread-separator" />;
@@ -1467,7 +1477,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                         <TooltipTrigger asChild>
                             <Button size="icon" className="rounded-full shadow-lg h-10 w-10 relative" onClick={handleScrollToBottom}>
                                 <ArrowDown className="h-5 w-5" />
-                                {initialUnreadCount > 0 && (
+                                {initialUnreadCount && initialUnreadCount > 0 && (
                                     <Badge variant="destructive" className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
                                         {initialUnreadCount > 9 ? "9+" : initialUnreadCount}
                                     </Badge>
