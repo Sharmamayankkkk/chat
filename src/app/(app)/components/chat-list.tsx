@@ -20,6 +20,7 @@ import type { Chat } from '@/lib/types';
 import { useAppContext } from '@/providers/app-provider';
 import { CreateGroupDialog } from './create-group-dialog';
 import { NewChatDialog } from './new-chat-dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ChatListProps {
   chats: Chat[];
@@ -74,7 +75,7 @@ export function ChatList({ chats }: ChatListProps) {
     <div className="flex h-full flex-col">
        <CreateGroupDialog open={isCreateGroupOpen} onOpenChange={setIsCreateGroupOpen} />
        <NewChatDialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen} />
-      <div className="relative p-2 flex items-center gap-2">
+      <div className="relative flex items-center gap-2 mb-2">
         <div className="relative w-full">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -107,8 +108,8 @@ export function ChatList({ chats }: ChatListProps) {
           )}
         </TooltipProvider>
       </div>
-      <div className="flex-1 overflow-y-auto">
-        <SidebarMenu className="p-2 pt-0">
+      <ScrollArea className="flex-1 -mx-2">
+        <SidebarMenu className="px-2">
           {filteredChats.length > 0 ? (
             filteredChats.map((chat) => {
               const { name, avatar } = getChatDisplayInfo(chat);
@@ -117,13 +118,13 @@ export function ChatList({ chats }: ChatListProps) {
                   <SidebarMenuButton
                     asChild
                     isActive={pathname === `/chat/${chat.id}`}
-                    className="w-full justify-start h-auto py-2"
+                    className="w-full justify-start h-14 py-2 gap-3"
                   >
                     <Link
                       href={`/chat/${chat.id}`}
                       onClick={handleLinkClick}
                     >
-                      <Avatar className="h-8 w-8">
+                      <Avatar className="h-10 w-10">
                         <AvatarImage
                           src={avatar}
                           alt={name}
@@ -148,7 +149,7 @@ export function ChatList({ chats }: ChatListProps) {
             </div>
           )}
         </SidebarMenu>
-      </div>
+      </ScrollArea>
     </div>
   );
 }

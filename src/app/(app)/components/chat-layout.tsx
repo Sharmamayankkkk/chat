@@ -25,7 +25,7 @@ export function ChatLayout({ chats, children }: ChatLayoutProps) {
   return (
     <div className="flex h-svh w-full">
       <Sidebar className="flex flex-col border-r">
-        <SidebarHeader>
+        <SidebarHeader className="p-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Icons.logo className="h-8 w-8 text-primary" />
@@ -35,15 +35,15 @@ export function ChatLayout({ chats, children }: ChatLayoutProps) {
           </div>
         </SidebarHeader>
 
-        <SidebarContent className="flex flex-col p-0">
+        <SidebarContent className="flex flex-col p-2 pt-0">
             <MainNav />
-            <Separator />
-            <div className="flex-1 overflow-hidden">
+            <Separator className="my-2" />
+            <div className="flex-1 flex flex-col min-h-0">
                 <ChatList chats={chats} />
             </div>
         </SidebarContent>
 
-        <SidebarFooter>
+        <SidebarFooter className="p-2">
            <UserMenu />
         </SidebarFooter>
       </Sidebar>
