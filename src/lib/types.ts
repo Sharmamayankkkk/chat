@@ -82,7 +82,6 @@ export type Chat = {
   unreadCount?: number;
   last_message_content?: string | null;
   last_message_timestamp?: string | null;
-  isLoadingMessages?: boolean;
 };
 
 // Matches the dm_requests table
@@ -152,7 +151,6 @@ export interface AppContextType {
   blockedUsers: string[]
   sendDmRequest: (toUserId: string, reason: string) => Promise<void>
   addChat: (newChat: Chat) => void
-  setMessagesForChat: (chatId: number, messages: React.SetStateAction<Message[]>) => void
   updateUser: (updates: Partial<User>) => Promise<void>
   leaveGroup: (chatId: number) => Promise<void>
   deleteGroup: (chatId: number) => Promise<void>
@@ -164,5 +162,6 @@ export interface AppContextType {
   setThemeSettings: (newSettings: Partial<ThemeSettings>) => void
   isReady: boolean
   resetUnreadCount: (chatId: number) => void
-  loadMessagesForChat: (chatId: number) => Promise<void>
 }
+
+    

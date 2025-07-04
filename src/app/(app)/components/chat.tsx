@@ -360,17 +360,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 .single();
 
             if (error) throw error;
-            if (!insertedMessage) throw new Error("Failed to insert message");
-            
-            const { data: fullMessage, error: fetchError } = await supabase
-              .from("messages")
-              .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
-              .eq("id", insertedMessage.id)
-              .single();
-            
-            if (fetchError) throw fetchError;
-            
-            setMessages(current => current.map(m => m.id === tempId ? (fullMessage as Message) : m));
+            // The realtime listener in ChatPage will handle replacing the temp message
 
         } catch (error: any) {
              toast({ variant: 'destructive', title: "Error sending message", description: error.message });
@@ -413,7 +403,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
         
         try {
-            const { data: insertedMessage, error } = await supabase
+            const { error } = await supabase
                 .from('messages')
                 .insert({
                     chat_id: chat.id,
@@ -422,21 +412,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     attachment_url: stickerUrl,
                     attachment_metadata: attachmentMetadata,
                     reply_to_message_id: replyingTo?.id,
-                })
-                .select('id')
-                .single();
+                });
     
             if (error) throw error;
-
-            const { data: fullMessage, error: fetchError } = await supabase
-              .from("messages")
-              .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
-              .eq("id", insertedMessage.id)
-              .single();
-
-            if (fetchError) throw fetchError;
-
-            setMessages(current => current.map(m => m.id === tempId ? (fullMessage as Message) : m));
+            // The realtime listener in ChatPage will handle replacing the temp message
             
         } catch (error: any) {
              toast({ variant: 'destructive', title: "Error sending sticker", description: error.message });
@@ -461,12 +440,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     };
 
     const handleDeleteForEveryone = async (messageId: number) => {
-        const originalMessage = chat.messages.find(m => m.id === messageId);
-        if (!originalMessage) return;
-
-        const updatedMessage = { ...originalMessage, content: DELETED_MESSAGE_MARKER, attachment_url: null, attachment_metadata: null, reactions: null };
-        setMessages(prev => prev.map(m => m.id === messageId ? updatedMessage : m));
-
+        // The realtime listener will handle the UI update
         const { error } = await supabase
             .from('messages')
             .update({ 
@@ -479,7 +453,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             .eq('id', messageId);
 
         if (error) {
-            setMessages(prev => prev.map(m => m.id === messageId ? originalMessage : m));
             toast({ variant: 'destructive', title: "Error deleting message", description: error.message });
         }
     };
@@ -520,34 +493,13 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     };
 
     const handleReaction = async (message: Message, emoji: string) => {
-        const originalReactions = JSON.parse(JSON.stringify(message.reactions || {}));
-        const newReactions = JSON.parse(JSON.stringify(message.reactions || {}));
-        
-        const reactionKey = emoji;
+        const { error } = await supabase.rpc('toggle_reaction', {
+          p_message_id: message.id,
+          p_user_id: loggedInUser.id,
+          p_emoji: emoji
+        });
 
-        const reactors = newReactions[reactionKey] || [];
-        const userIndex = reactors.indexOf(loggedInUser.id);
-        
-        if (userIndex > -1) {
-            reactors.splice(userIndex, 1);
-            if (reactors.length === 0) {
-                delete newReactions[reactionKey];
-            }
-        } else {
-            reactors.push(loggedInUser.id);
-            newReactions[reactionKey] = reactors;
-        }
-
-        // Optimistic update
-        setMessages(prev => prev.map(m => m.id === message.id ? { ...m, reactions: newReactions } : m));
-
-        const { error } = await supabase
-            .from('messages')
-            .update({ reactions: newReactions })
-            .eq('id', message.id);
-        
         if (error) {
-            setMessages(prev => prev.map(m => m.id === message.id ? { ...m, reactions: originalReactions } : m));
             toast({ variant: 'destructive', title: 'Error updating reaction', description: error.message });
         }
     };
@@ -740,22 +692,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     };
 
     const handleToggleStar = async (messageToStar: Message) => {
-        const originalIsStarred = messageToStar.is_starred;
-        const newIsStarred = !originalIsStarred;
-
-        setMessages(prev => prev.map(m => 
-            m.id === messageToStar.id ? { ...m, is_starred: newIsStarred } : m
-        ));
-
         const { error } = await supabase
             .from('messages')
-            .update({ is_starred: newIsStarred })
+            .update({ is_starred: !messageToStar.is_starred })
             .eq('id', messageToStar.id);
         
         if (error) {
-            setMessages(prev => prev.map(m => 
-                m.id === messageToStar.id ? { ...m, is_starred: originalIsStarred } : m
-            ));
             toast({ variant: 'destructive', title: 'Error starring message', description: error.message });
         }
     };
@@ -763,12 +705,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const handleTogglePin = async (messageToPin: Message) => {
         if (isGroup && !isGroupAdmin) return;
 
-        const originalIsPinned = messageToPin.is_pinned;
-        const newIsPinned = !originalIsPinned;
-
-        setMessages(prev => prev.map(m =>
-            m.id === messageToPin.id ? { ...m, is_pinned: newIsPinned } : m
-        ));
+        const newIsPinned = !messageToPin.is_pinned;
 
         const { error } = await supabase
             .from('messages')
@@ -776,9 +713,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             .eq('id', messageToPin.id);
 
         if (error) {
-            setMessages(prev => prev.map(m =>
-                m.id === messageToPin.id ? { ...m, is_pinned: originalIsPinned } : m
-            ));
             toast({ variant: 'destructive', title: 'Error pinning message', description: error.message });
         } else {
             if (newIsPinned) {
@@ -1697,3 +1631,5 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     </div>
   );
 }
+
+    

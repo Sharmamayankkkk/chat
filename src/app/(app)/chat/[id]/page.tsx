@@ -5,8 +5,9 @@ import { notFound, useParams, useSearchParams } from "next/navigation"
 import { Chat as ChatUI } from "../../components/chat"
 import { useAppContext } from "@/providers/app-provider"
 import { Icons } from "@/components/icons"
-import { useEffect, useRef, useMemo, useCallback } from "react"
-import type { Message } from "@/lib/types"
+import { useEffect, useRef, useMemo, useCallback, useState } from "react"
+import type { Message, Chat } from "@/lib/types"
+import { createClient } from "@/lib/utils"
 
 function ChatPageLoading() {
   return (
@@ -24,26 +25,46 @@ export default function ChatPage() {
   const searchParams = useSearchParams()
   const highlightMessageId = searchParams.get("highlight")
   const chatId = Number(params.id)
+  const supabase = createClient()
 
   const {
     loggedInUser,
     isReady: isAppReady,
     resetUnreadCount,
     chats,
-    loadMessagesForChat,
-    setMessagesForChat
   } = useAppContext()
+  
+  const [messages, setMessages] = useState<Message[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const topMessageSentinelRef = useRef<HTMLDivElement>(null)
 
   const chat = useMemo(() => chats.find((c) => c.id === chatId), [chats, chatId])
+  const initialUnreadCount = useMemo(() => chat?.unreadCount || 0, [chat])
+
+  const fetchMessages = useCallback(async () => {
+    setIsLoading(true)
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching messages:', error);
+      setMessages([]);
+    } else {
+      setMessages(data as Message[]);
+    }
+    setIsLoading(false);
+  }, [chatId, supabase]);
 
   useEffect(() => {
     if (isAppReady && loggedInUser?.id && chatId) {
-      loadMessagesForChat(chatId)
+      fetchMessages();
     }
-  }, [chatId, isAppReady, loggedInUser?.id, loadMessagesForChat])
+  }, [chatId, isAppReady, loggedInUser?.id, fetchMessages])
 
   useEffect(() => {
     if (chatId && loggedInUser?.id) {
@@ -53,22 +74,56 @@ export default function ChatPage() {
       return () => window.removeEventListener("focus", markAsRead)
     }
   }, [chatId, loggedInUser?.id, resetUnreadCount])
-
-  const setMessages = useCallback(
-    (updater: React.SetStateAction<Message[]>) => {
-      setMessagesForChat(chatId, updater);
-    },
-    [chatId, setMessagesForChat]
-  );
   
-  const initialUnreadCount = useMemo(() => {
-    if (!isAppReady || !chat) return 0;
-    return chat?.unreadCount || 0;
-  }, [isAppReady, chat]);
+  useEffect(() => {
+    const channel = supabase
+      .channel(`chat-${chatId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `chat_id=eq.${chatId}`
+      }, async (payload) => {
+          const { data: fullMessage, error } = await supabase
+            .from("messages")
+            .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
+            .eq("id", payload.new.id)
+            .single()
+          
+          if (error || !fullMessage) return;
+
+          setMessages(currentMessages => {
+             if (currentMessages.some(m => m.id === fullMessage.id)) {
+               return currentMessages;
+             }
+             return [...currentMessages, fullMessage as Message]
+          });
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'messages',
+        filter: `chat_id=eq.${chatId}`
+       }, async (payload) => {
+          const { data: fullMessage, error } = await supabase
+            .from("messages")
+            .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
+            .eq("id", payload.new.id)
+            .single()
+          
+          if (error || !fullMessage) return;
+          
+          setMessages(current => current.map(m => m.id === payload.new.id ? fullMessage as Message : m));
+       })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    }
+  }, [chatId, supabase]);
 
 
-  // The chat from context might not have messages loaded yet, or might be loading
-  if (!isAppReady || !chat || chat.isLoadingMessages) {
+  if (isLoading || !isAppReady || !chat) {
     return <ChatPageLoading />
   }
 
@@ -79,16 +134,17 @@ export default function ChatPage() {
 
   return (
     <ChatUI
-      chat={chat}
+      chat={{ ...chat, messages }} // Combine chat shell with loaded messages
       loggedInUser={loggedInUser}
       setMessages={setMessages}
       highlightMessageId={highlightMessageId ? Number(highlightMessageId) : null}
-      // These props are no longer managed here, but we can pass dummy values or refactor ChatUI
       isLoadingMore={false}
-      hasMoreMessages={true} // Assume true for now, can implement pagination later
+      hasMoreMessages={true}
       topMessageSentinelRef={topMessageSentinelRef}
       scrollContainerRef={scrollContainerRef}
       initialUnreadCount={initialUnreadCount}
     />
   )
 }
+
+    
