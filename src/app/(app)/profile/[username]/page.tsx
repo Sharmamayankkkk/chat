@@ -239,7 +239,7 @@ export default function UserProfilePage() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Role</p>
-                  <p>{getRoleBadge(user.role, user.is_admin)}</p>
+                  <div>{getRoleBadge(user.role, user.is_admin)}</div>
                 </div>
               </CardContent>
             </Card>

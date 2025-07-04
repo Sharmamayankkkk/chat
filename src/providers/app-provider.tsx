@@ -63,20 +63,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
         const { user } = session;
 
-        // Fetch critical user profile first
         const { data: profile, error: profileError } = await supabaseRef.current.from("profiles").select("*").eq("id", user.id).single();
         if (profileError || !profile) {
             throw new Error("Could not fetch user profile. Please sign out and sign in again.");
         }
         const fullUserProfile = { ...profile, email: user.email } as User;
         
-        // Set theme settings from user profile if they exist
         if (fullUserProfile.theme_settings) {
             setThemeSettingsState(prev => ({ ...prev, ...fullUserProfile.theme_settings }));
         }
         setLoggedInUser(fullUserProfile);
 
-        // Fetch other data in parallel
         const [
             { data: allUsersData, error: usersError },
             { data: dmRequestsData, error: dmError },
@@ -102,13 +99,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
         let initialChats: Chat[] = [];
 
         if (chatIds.length > 0) {
-            const { data: chatDetails, error: chatDetailsError } = await supabaseRef.current
-                .rpc('get_user_chats_with_details', { p_user_id: user.id })
+            const { data: chatsData, error: chatsError } = await supabaseRef.current
+                .from('chats')
+                .select(`*, participants:participants!chat_id(*, profiles!user_id(*))`)
+                .in('id', chatIds);
 
-            if (chatDetailsError) {
-              console.error("Error fetching chats with details:", chatDetailsError);
-            } else {
-              initialChats = (chatDetails || []) as Chat[];
+            if (chatsError) {
+                console.error("Could not fetch user's chats:", chatsError);
+            } else if (chatsData) {
+                const chatsWithDetails = await Promise.all(
+                    chatsData.map(async (chat) => {
+                        const { data: lastMessage, error: lastMessageError } = await supabaseRef.current
+                            .from('messages')
+                            .select('content, created_at, attachment_metadata')
+                            .eq('chat_id', chat.id)
+                            .order('created_at', { ascending: false })
+                            .limit(1)
+                            .single();
+                        
+                        if(lastMessageError && lastMessageError.code !== 'PGRST116') { // PGRST116 = no rows found, which is fine
+                            console.error(`Error fetching last message for chat ${chat.id}:`, lastMessageError);
+                        }
+
+                        return {
+                            ...chat,
+                            messages: [], // Messages will be fetched on demand
+                            unreadCount: 0, // Reset on load; client-side logic will increment for new messages
+                            last_message_content: lastMessage?.content || lastMessage?.attachment_metadata?.name || 'No messages yet',
+                            last_message_timestamp: lastMessage?.created_at || chat.created_at,
+                        };
+                    })
+                );
+                initialChats = chatsWithDetails as Chat[];
             }
         }
         
@@ -340,15 +362,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [loggedInUser, allUsers, toast]);
 
-  const resetUnreadCount = useCallback(async (chatId: number) => {
+  const resetUnreadCount = useCallback((chatId: number) => {
     setChats(current => current.map(c => (c.id === chatId && c.unreadCount ? { ...c, unreadCount: 0 } : c)))
-    try {
-      const { error } = await supabaseRef.current.rpc('mark_chat_as_read', { p_chat_id: chatId, p_user_id: loggedInUser?.id });
-      if (error) throw error;
-    } catch (error) {
-      console.error('Failed to mark chat as read:', error);
-    }
-  }, [loggedInUser?.id]);
+  }, []);
 
   if (!isReady) {
     return <AppLoading />
