@@ -34,6 +34,7 @@ import {
   DialogTitle,
   DialogFooter,
   DialogClose,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { VoiceNotePlayer } from './voice-note-player';
@@ -493,12 +494,25 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     };
 
     const handleReaction = async (message: Message, emoji: string) => {
-        const { error } = await supabase.rpc('toggle_reaction', {
-          p_message_id: message.id,
-          p_user_id: loggedInUser.id,
-          p_emoji: emoji
-        });
+        const currentReactions = message.reactions ? { ...message.reactions } : {};
+        const usersForEmoji = currentReactions[emoji] || [];
 
+        if (usersForEmoji.includes(loggedInUser.id)) {
+            // User is removing their reaction
+            currentReactions[emoji] = usersForEmoji.filter(id => id !== loggedInUser.id);
+            if (currentReactions[emoji].length === 0) {
+                delete currentReactions[emoji];
+            }
+        } else {
+            // User is adding a reaction
+            currentReactions[emoji] = [...usersForEmoji, loggedInUser.id];
+        }
+
+        const { error } = await supabase
+            .from('messages')
+            .update({ reactions: currentReactions })
+            .eq('id', message.id);
+        
         if (error) {
             toast({ variant: 'destructive', title: 'Error updating reaction', description: error.message });
         }
@@ -1631,5 +1645,3 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     </div>
   );
 }
-
-    

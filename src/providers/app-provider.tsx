@@ -68,37 +68,53 @@ export function AppProvider({ children }: { children: ReactNode }) {
           { data: allUsersData, error: usersError },
           { data: dmRequestsData, error: dmError },
           { data: blockedData, error: blockedError },
-          { data: chatsData, error: chatsError },
         ] = await Promise.all([
           supabaseRef.current.from("profiles").select("*").eq("id", user.id).single(),
           supabaseRef.current.from("profiles").select("*"),
           supabaseRef.current.from("dm_requests").select("*, from:profiles!from_user_id(*), to:profiles!to_user_id(*)").or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`),
           supabaseRef.current.from("blocked_users").select("blocked_id").eq("blocker_id", user.id),
-          supabaseRef.current.rpc('get_user_chats_with_details', { p_user_id: user.id }),
-        ])
+        ]);
 
-        if (profileError) throw new Error("Could not fetch user profile.")
-        if (chatsError) throw new Error(`Could not fetch chats: ${chatsError.message}`)
+        if (profileError) throw new Error("Could not fetch user profile.");
+        
+        // Set state for data that we fetched successfully
+        const fullUserProfile = { ...profile, email: user.email } as User;
+        setLoggedInUser(fullUserProfile);
+        setAllUsers((allUsersData as User[]) || []);
+        setDmRequests((dmRequestsData as DmRequest[]) || []);
+        setBlockedUsers(blockedData?.map((b) => b.blocked_id) || []);
+        
+        // Fetch chats without relying on RPC
+        const { data: participantRecords, error: participantError } = await supabaseRef.current
+          .from('participants')
+          .select('chat_id')
+          .eq('user_id', user.id);
+        
+        if (participantError) throw new Error("Could not fetch user's chats list.");
 
-        const fullUserProfile = { ...profile, email: user.email } as User
-        setLoggedInUser(fullUserProfile)
-        setAllUsers((allUsersData as User[]) || [])
-        setDmRequests((dmRequestsData as DmRequest[]) || [])
-        setBlockedUsers(blockedData?.map((b) => b.blocked_id) || [])
-        
-        const initialChats = (chatsData || []).map((chat: any) => ({
-            ...chat,
-            participants: chat.participants.map((p:any) => ({
-                ...p,
-                profiles: p.user_profile
-            })),
-            messages: [],
-            unreadCount: chat.unread_count || 0,
-            last_message_content: chat.last_message_content,
-            last_message_timestamp: chat.last_message_timestamp,
-        }));
-        
-        setChats(sortChats(initialChats as unknown as Chat[]))
+        const chatIds = participantRecords.map(p => p.chat_id);
+        let initialChats: Chat[] = [];
+
+        if (chatIds.length > 0) {
+            const { data: chatDetails, error: chatDetailsError } = await supabaseRef.current
+                .from('chats')
+                .select('*, participants:participants(*, profiles!user_id(*))')
+                .in('id', chatIds);
+            
+            if (chatDetailsError) throw new Error("Could not fetch chat details.");
+            
+            // Map to Chat type, initializing fields that an RPC would have provided
+            const mappedChats = (chatDetails || []).map((chat) => ({
+                ...chat,
+                messages: [],
+                unreadCount: 0, // To be populated by realtime updates
+                last_message_content: "...", // Placeholder
+                last_message_timestamp: chat.created_at, // Use creation for initial sort
+            }));
+            initialChats = mappedChats as unknown as Chat[];
+        }
+
+        setChats(sortChats(initialChats));
         
         await requestNotificationPermission()
       } catch (error: any) {
@@ -317,14 +333,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [loggedInUser, allUsers, toast]);
 
-  const resetUnreadCount = useCallback(async (chatId: number) => {
-      setChats(current => current.map(c => c.id === chatId ? { ...c, unreadCount: 0 } : c));
-      try {
-        await supabaseRef.current.rpc('mark_chat_as_read', { p_chat_id: chatId, p_user_id: loggedInUser!.id });
-      } catch (error: any) {
-        console.error("Failed to mark chat as read:", error);
-      }
-  }, [loggedInUser]);
+  const resetUnreadCount = useCallback((chatId: number) => {
+    setChats(current => current.map(c => (c.id === chatId && c.unreadCount ? { ...c, unreadCount: 0 } : c)))
+  }, [])
 
   if (!isReady) {
     return <AppLoading />
@@ -347,5 +358,3 @@ export function useAppContext() {
   }
   return context
 }
-
-    
