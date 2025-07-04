@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -85,7 +84,7 @@ export default function ChatAppearancePage() {
       toast({
         variant: 'destructive',
         title: 'Color Conflict',
-        description: 'Bubble color cannot be the same as the username color.',
+        description: 'Incoming bubble color cannot be the same as the username color.',
       });
       return;
     }
