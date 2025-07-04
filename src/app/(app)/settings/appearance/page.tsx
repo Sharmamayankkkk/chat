@@ -117,8 +117,11 @@ export default function ChatAppearancePage() {
       const reader = new FileReader();
       reader.onload = (e) => {
         const newWallpaper = e.target?.result as string;
+        // This is a temporary client-side preview. For persistence, this needs to be uploaded.
+        // The new `setThemeSettings` will save this temporary data URI to the DB.
+        // A production app should upload to a bucket first and save the URL.
         setThemeSettings({ chatWallpaper: newWallpaper });
-        toast({ title: 'Wallpaper uploaded!' });
+        toast({ title: 'Wallpaper preview updated!' });
       };
       reader.readAsDataURL(file);
     }

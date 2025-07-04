@@ -1,4 +1,5 @@
 
+
 "use client"
 
 import { createContext, useContext, useState, type ReactNode, useEffect, useCallback, useMemo, useRef } from "react"
@@ -68,9 +69,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
             throw new Error("Could not fetch user profile. Please sign out and sign in again.");
         }
         const fullUserProfile = { ...profile, email: user.email } as User;
+        
+        // Set theme settings from user profile if they exist
+        if (fullUserProfile.theme_settings) {
+            setThemeSettingsState(prev => ({ ...prev, ...fullUserProfile.theme_settings }));
+        }
         setLoggedInUser(fullUserProfile);
 
-        // Fetch other data in parallel, with individual error handling
+        // Fetch other data in parallel
         const [
             { data: allUsersData, error: usersError },
             { data: dmRequestsData, error: dmError },
@@ -82,7 +88,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseRef.current.from("blocked_users").select("blocked_id").eq("blocker_id", user.id),
             supabaseRef.current.from('participants').select('chat_id').eq('user_id', user.id)
         ]);
-
+        
         if (usersError) console.error("Could not fetch all users:", usersError);
         if (dmError) console.error("Could not fetch DM requests:", dmError);
         if (blockedError) console.error("Could not fetch blocked users:", blockedError);
@@ -97,21 +103,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         if (chatIds.length > 0) {
             const { data: chatDetails, error: chatDetailsError } = await supabaseRef.current
-                .from('chats')
-                .select('*, participants:participants(*, profiles!user_id(*))')
-                .in('id', chatIds);
-            
+                .rpc('get_user_chats_with_details', { p_user_id: user.id })
+
             if (chatDetailsError) {
-              console.error("Error fetching chat details:", chatDetailsError);
+              console.error("Error fetching chats with details:", chatDetailsError);
             } else {
-              const mappedChats = (chatDetails || []).map((chat) => ({
-                  ...chat,
-                  messages: [],
-                  unreadCount: 0,
-                  last_message_content: "...",
-                  last_message_timestamp: chat.created_at,
-              }));
-              initialChats = mappedChats as unknown as Chat[];
+              initialChats = (chatDetails || []) as Chat[];
             }
         }
         
@@ -131,15 +128,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-
-    try {
-        const savedSettings = localStorage.getItem("themeSettings");
-        if (savedSettings) {
-            setThemeSettingsState(JSON.parse(savedSettings));
-        }
-    } catch (error) {
-        console.error("Could not load theme settings:", error);
-    }
 
     const { data: { subscription } } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
         if (!mounted) return;
@@ -247,17 +235,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [loggedInUser, session, handleNewMessage, fetchInitialData]);
 
-  const setThemeSettings = useCallback((newSettings: Partial<ThemeSettings>) => {
-    setThemeSettingsState((prev) => {
-      const updated = { ...prev, ...newSettings }
-      try {
-        localStorage.setItem("themeSettings", JSON.stringify(updated))
-      } catch (error) {
-        console.error("Could not save theme settings to localStorage", error)
-      }
-      return updated
-    })
-  }, [])
+  const setThemeSettings = useCallback(async (newSettings: Partial<ThemeSettings>) => {
+    if (!loggedInUser) return;
+
+    const oldSettings = themeSettings;
+    const updatedSettings = { ...themeSettings, ...newSettings };
+    setThemeSettingsState(updatedSettings); // Optimistic UI update
+
+    try {
+        const { error } = await supabaseRef.current
+            .from('profiles')
+            .update({ theme_settings: updatedSettings })
+            .eq('id', loggedInUser.id);
+        
+        if (error) throw error;
+
+        // Also update the local user object so we don't need a re-fetch
+        setLoggedInUser(prev => prev ? { ...prev, theme_settings: updatedSettings } : null);
+
+    } catch (error: any) {
+        console.error("Could not save theme settings to database", error);
+        toast({ variant: 'destructive', title: 'Error saving settings', description: 'Your appearance changes could not be saved.' });
+        setThemeSettingsState(oldSettings); // Revert on error
+    }
+  }, [loggedInUser, themeSettings, toast]);
 
   const addChat = useCallback((newChat: Chat) => {
     setChats((currentChats) => {
@@ -339,9 +340,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [loggedInUser, allUsers, toast]);
 
-  const resetUnreadCount = useCallback((chatId: number) => {
+  const resetUnreadCount = useCallback(async (chatId: number) => {
     setChats(current => current.map(c => (c.id === chatId && c.unreadCount ? { ...c, unreadCount: 0 } : c)))
-  }, [])
+    try {
+      const { error } = await supabaseRef.current.rpc('mark_chat_as_read', { p_chat_id: chatId, p_user_id: loggedInUser?.id });
+      if (error) throw error;
+    } catch (error) {
+      console.error('Failed to mark chat as read:', error);
+    }
+  }, [loggedInUser?.id]);
 
   if (!isReady) {
     return <AppLoading />

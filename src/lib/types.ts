@@ -1,4 +1,5 @@
 
+
 // Matches public.profiles table
 export type User = {
   id: string; // uuid
@@ -10,6 +11,7 @@ export type User = {
   bio?: string;
   role?: 'user' | 'admin' | 'gurudev';
   is_admin: boolean;
+  theme_settings?: ThemeSettings | null;
 };
 
 export type Reaction = {
@@ -159,7 +161,7 @@ export interface AppContextType {
   reportUser: (reportedUserId: string, reason: string, messageId?: number) => Promise<void>
   forwardMessage: (message: Message, chatIds: number[]) => Promise<void>
   themeSettings: ThemeSettings
-  setThemeSettings: (newSettings: Partial<ThemeSettings>) => void
+  setThemeSettings: (newSettings: Partial<ThemeSettings>) => Promise<void>
   isReady: boolean
   resetUnreadCount: (chatId: number) => void
 }
