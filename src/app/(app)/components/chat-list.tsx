@@ -61,7 +61,7 @@ export function ChatList({ chats }: ChatListProps) {
   }
 
   const filteredChats = React.useMemo(() => {
-    if (!searchQuery) return chats; // The chats array from context is now always pre-sorted
+    if (!searchQuery) return chats;
 
     const lowercasedQuery = searchQuery.toLowerCase();
     return chats.filter(chat => {
@@ -114,14 +114,14 @@ export function ChatList({ chats }: ChatListProps) {
               const { name, avatar } = getChatDisplayInfo(chat);
               return (
                 <SidebarMenuItem key={chat.id}>
-                  <Link
-                    href={`/chat/${chat.id}`}
-                    className="w-full"
-                    onClick={handleLinkClick}
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname === `/chat/${chat.id}`}
+                    className="w-full justify-start h-auto py-2"
                   >
-                    <SidebarMenuButton
-                      isActive={pathname === `/chat/${chat.id}`}
-                      className="w-full justify-start h-auto py-2"
+                    <Link
+                      href={`/chat/${chat.id}`}
+                      onClick={handleLinkClick}
                     >
                       <Avatar className="h-8 w-8">
                         <AvatarImage
@@ -137,8 +137,8 @@ export function ChatList({ chats }: ChatListProps) {
                       {chat.unreadCount && chat.unreadCount > 0 ? (
                         <SidebarMenuBadge>{chat.unreadCount}</SidebarMenuBadge>
                       ) : null}
-                    </SidebarMenuButton>
-                  </Link>
+                    </Link>
+                  </SidebarMenuButton>
                 </SidebarMenuItem>
               )
             })

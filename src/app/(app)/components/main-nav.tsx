@@ -40,15 +40,16 @@ export function MainNav() {
       <SidebarMenu>
         {menuItems.map((item) => (
             <SidebarMenuItem key={item.href}>
-              <Link href={item.href} className="w-full">
-                <SidebarMenuButton
-                  isActive={item.isActive}
-                  className="w-full justify-start text-base h-10"
-                >
+              <SidebarMenuButton
+                asChild
+                isActive={item.isActive}
+                className="w-full justify-start text-base h-10"
+              >
+                <Link href={item.href}>
                   <item.icon className="h-5 w-5 mr-3" />
                   <span>{item.label}</span>
-                </SidebarMenuButton>
-              </Link>
+                </Link>
+              </SidebarMenuButton>
             </SidebarMenuItem>
           )
         )}

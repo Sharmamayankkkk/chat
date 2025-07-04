@@ -58,41 +58,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const fetchInitialData = useCallback(
-    async (session: Session) => {
-      try {
-        const { user } = session
+  const fetchInitialData = useCallback(async (session: Session) => {
+    try {
+        const { user } = session;
 
-        const [
-          { data: profile, error: profileError },
-          { data: allUsersData, error: usersError },
-          { data: dmRequestsData, error: dmError },
-          { data: blockedData, error: blockedError },
-        ] = await Promise.all([
-          supabaseRef.current.from("profiles").select("*").eq("id", user.id).single(),
-          supabaseRef.current.from("profiles").select("*"),
-          supabaseRef.current.from("dm_requests").select("*, from:profiles!from_user_id(*), to:profiles!to_user_id(*)").or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`),
-          supabaseRef.current.from("blocked_users").select("blocked_id").eq("blocker_id", user.id),
-        ]);
-
-        if (profileError) throw new Error("Could not fetch user profile.");
-        
-        // Set state for data that we fetched successfully
+        // Fetch critical user profile first
+        const { data: profile, error: profileError } = await supabaseRef.current.from("profiles").select("*").eq("id", user.id).single();
+        if (profileError || !profile) {
+            throw new Error("Could not fetch user profile. Please sign out and sign in again.");
+        }
         const fullUserProfile = { ...profile, email: user.email } as User;
         setLoggedInUser(fullUserProfile);
+
+        // Fetch other data in parallel, with individual error handling
+        const [
+            { data: allUsersData, error: usersError },
+            { data: dmRequestsData, error: dmError },
+            { data: blockedData, error: blockedError },
+            { data: participantRecords, error: participantError }
+        ] = await Promise.all([
+            supabaseRef.current.from("profiles").select("*"),
+            supabaseRef.current.from("dm_requests").select("*, from:profiles!from_user_id(*), to:profiles!to_user_id(*)").or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`),
+            supabaseRef.current.from("blocked_users").select("blocked_id").eq("blocker_id", user.id),
+            supabaseRef.current.from('participants').select('chat_id').eq('user_id', user.id)
+        ]);
+
+        if (usersError) console.error("Could not fetch all users:", usersError);
+        if (dmError) console.error("Could not fetch DM requests:", dmError);
+        if (blockedError) console.error("Could not fetch blocked users:", blockedError);
+        if (participantError) console.error("Could not fetch user's chats list:", participantError);
+
         setAllUsers((allUsersData as User[]) || []);
         setDmRequests((dmRequestsData as DmRequest[]) || []);
         setBlockedUsers(blockedData?.map((b) => b.blocked_id) || []);
-        
-        // Fetch chats without relying on RPC
-        const { data: participantRecords, error: participantError } = await supabaseRef.current
-          .from('participants')
-          .select('chat_id')
-          .eq('user_id', user.id);
-        
-        if (participantError) throw new Error("Could not fetch user's chats list.");
 
-        const chatIds = participantRecords.map(p => p.chat_id);
+        const chatIds = participantRecords?.map(p => p.chat_id) || [];
         let initialChats: Chat[] = [];
 
         if (chatIds.length > 0) {
@@ -101,63 +101,69 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 .select('*, participants:participants(*, profiles!user_id(*))')
                 .in('id', chatIds);
             
-            if (chatDetailsError) throw new Error("Could not fetch chat details.");
-            
-            // Map to Chat type, initializing fields that an RPC would have provided
-            const mappedChats = (chatDetails || []).map((chat) => ({
-                ...chat,
-                messages: [],
-                unreadCount: 0, // To be populated by realtime updates
-                last_message_content: "...", // Placeholder
-                last_message_timestamp: chat.created_at, // Use creation for initial sort
-            }));
-            initialChats = mappedChats as unknown as Chat[];
+            if (chatDetailsError) {
+              console.error("Error fetching chat details:", chatDetailsError);
+            } else {
+              const mappedChats = (chatDetails || []).map((chat) => ({
+                  ...chat,
+                  messages: [],
+                  unreadCount: 0,
+                  last_message_content: "...",
+                  last_message_timestamp: chat.created_at,
+              }));
+              initialChats = mappedChats as unknown as Chat[];
+            }
         }
-
-        setChats(sortChats(initialChats));
         
-        await requestNotificationPermission()
-      } catch (error: any) {
-        console.error("Error loading initial data:", error)
+        setChats(sortChats(initialChats));
+        await requestNotificationPermission();
+
+    } catch (error: any) {
+        console.error("Error loading initial data:", error);
         toast({
-          variant: "destructive",
-          title: "Error loading data",
-          description: error.message || "Failed to load application data. Please try again.",
-        })
-      } finally {
-        setIsReady(true)
-      }
-    },
-    [toast, requestNotificationPermission],
-  )
+            variant: "destructive",
+            title: "Error Loading Application",
+            description: error.message || "Failed to load application data. Please try again.",
+        });
+        await supabaseRef.current.auth.signOut();
+    }
+  }, [toast, requestNotificationPermission]);
 
   useEffect(() => {
+    let mounted = true;
+
     try {
-      const savedSettings = localStorage.getItem("themeSettings")
-      if (savedSettings) setThemeSettingsState(JSON.parse(savedSettings))
+        const savedSettings = localStorage.getItem("themeSettings");
+        if (savedSettings) {
+            setThemeSettingsState(JSON.parse(savedSettings));
+        }
     } catch (error) {
-      console.error("Could not load theme settings:", error)
+        console.error("Could not load theme settings:", error);
     }
 
     const { data: { subscription } } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
-      setSession(session)
-      if (session && (event === "SIGNED_IN" || event === "INITIAL_SESSION")) {
-        await fetchInitialData(session)
-      } else if (!session) {
-        setIsReady(true)
-        setLoggedInUser(null)
-        setChats([])
-        setAllUsers([])
-        setDmRequests([])
-        setBlockedUsers([])
-        subscriptionsRef.current.forEach((sub) => sub.unsubscribe())
-        subscriptionsRef.current = []
-      }
-    })
+        if (!mounted) return;
 
-    return () => subscription.unsubscribe()
-  }, [fetchInitialData])
+        setSession(session);
 
+        if (session) {
+            await fetchInitialData(session);
+        } else {
+            setLoggedInUser(null);
+            setChats([]);
+            setAllUsers([]);
+            setDmRequests([]);
+            setBlockedUsers([]);
+        }
+        setIsReady(true);
+    });
+
+    return () => {
+        mounted = false;
+        subscription.unsubscribe();
+    };
+  }, [fetchInitialData]);
+  
   const handleNewMessage = useCallback(
     async (payload: RealtimePostgresChangesPayload<Message>) => {
       if (!loggedInUser) return
