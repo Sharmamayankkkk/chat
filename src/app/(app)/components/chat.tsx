@@ -79,6 +79,12 @@ const formatRecordingTime = (seconds: number) => {
 const DELETED_MESSAGE_MARKER = '[[MSG_DELETED]]';
 const SYSTEM_MESSAGE_PREFIX = '[[SYS:';
 
+const FULL_MESSAGE_SELECT_QUERY = `
+    *, 
+    profiles!user_id(*), 
+    replied_to_message:reply_to_message_id(*, profiles!user_id(*))
+`;
+
 export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLoadingMore, hasMoreMessages, topMessageSentinelRef, scrollContainerRef, initialUnreadCount = 0 }: ChatProps) {
     const { toast } = useToast();
     const { 
@@ -296,11 +302,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         if (isSending || (content.trim() === '' && !attachment)) return;
         
         setIsSending(true);
-        let attachmentUrl: string | null = null;
-        let attachmentMetadata: AttachmentMetadata | null = null;
-        
         const tempId = `temp-${uuidv4()}`;
-
+        
+        // --- Optimistic UI Update ---
         const newMessageObject: Message = {
           id: tempId,
           created_at: new Date().toISOString(),
@@ -326,6 +330,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
 
         try {
+            // --- Process and Upload Attachment ---
+            let attachmentUrl: string | null = null;
+            let attachmentMetadata: AttachmentMetadata | null = null;
             if (attachment) {
                 const file = attachment.file;
                 const fileExt = file.name.split('.').pop();
@@ -345,8 +352,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 attachmentMetadata = { name: file.name, type: file.type, size: file.size };
             }
             
+            // --- Insert message into DB and get the final version back ---
             let finalContent = contentToSave ?? content;
-            
             const { data: insertedMessage, error } = await supabase
                 .from('messages')
                 .insert({
@@ -357,11 +364,18 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     attachment_metadata: attachmentMetadata,
                     reply_to_message_id: replyingTo?.id,
                 })
-                .select('id')
+                .select(FULL_MESSAGE_SELECT_QUERY)
                 .single();
 
             if (error) throw error;
-            // The realtime listener in ChatPage will handle replacing the temp message
+            
+            // --- Replace temp message with final version from DB ---
+            if (insertedMessage) {
+              setMessages(current => current.map(m => (m.id === tempId ? (insertedMessage as Message) : m)));
+            } else {
+              // Fallback if select fails: remove temp and wait for realtime
+              setMessages(current => current.filter(m => m.id !== tempId));
+            }
 
         } catch (error: any) {
              toast({ variant: 'destructive', title: "Error sending message", description: error.message });
@@ -404,7 +418,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
         
         try {
-            const { error } = await supabase
+            const { data: insertedMessage, error } = await supabase
                 .from('messages')
                 .insert({
                     chat_id: chat.id,
@@ -413,11 +427,16 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     attachment_url: stickerUrl,
                     attachment_metadata: attachmentMetadata,
                     reply_to_message_id: replyingTo?.id,
-                });
+                })
+                .select(FULL_MESSAGE_SELECT_QUERY)
+                .single();
     
             if (error) throw error;
-            // The realtime listener in ChatPage will handle replacing the temp message
             
+            if (insertedMessage) {
+              setMessages(current => current.map(m => (m.id === tempId ? (insertedMessage as Message) : m)));
+            }
+
         } catch (error: any) {
              toast({ variant: 'destructive', title: "Error sending sticker", description: error.message });
              setMessages(current => current.filter(m => m.id !== tempId));
@@ -441,7 +460,16 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     };
 
     const handleDeleteForEveryone = async (messageId: number) => {
-        // The realtime listener will handle the UI update
+        // The realtime listener will handle the UI update for other clients
+        // We handle our own UI update optimistically
+        const originalMessages = chat.messages || [];
+        const newMessages = originalMessages.map(m => 
+            m.id === messageId 
+            ? { ...m, content: DELETED_MESSAGE_MARKER, attachment_url: null, attachment_metadata: null, reactions: null, is_edited: false } 
+            : m
+        );
+        setMessages(newMessages);
+
         const { error } = await supabase
             .from('messages')
             .update({ 
@@ -455,6 +483,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
         if (error) {
             toast({ variant: 'destructive', title: "Error deleting message", description: error.message });
+            setMessages(originalMessages); // Revert on error
         }
     };
     
@@ -591,13 +620,15 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
     const handleCancelRecording = () => {
         if (mediaRecorderRef.current) {
-            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-            mediaRecorderRef.current = null;
+            // onstop will not be called if we just stop tracks.
+            // We need to stop the recorder first, but prevent the onstop handler from sending the message.
+            mediaRecorderRef.current.onstop = () => {
+                mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
+                if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+                setIsRecording(false);
+            };
+            mediaRecorderRef.current.stop();
         }
-        if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
-        audioChunksRef.current = [];
-        setIsRecording(false);
-        setRecordingTime(0);
     };
 
     const mentionableUsers = useMemo(() => {
@@ -1238,8 +1269,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         </div>
       {isMyMessage && (
           <Avatar className="h-8 w-8 self-end">
-              <AvatarImage src={sender.avatar_url} alt={sender.name} data-ai-hint="avatar" />
-              <AvatarFallback>{sender.name?.charAt(0)}</AvatarFallback>
+              <AvatarImage src={loggedInUser.avatar_url} alt={loggedInUser.name} data-ai-hint="avatar" />
+              <AvatarFallback>{loggedInUser.name?.charAt(0)}</AvatarFallback>
           </Avatar>
       )}
       </div>
@@ -1466,14 +1497,14 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                   <Trash2 />
                   <span className="sr-only">Cancel recording</span>
                 </Button>
-                <div className="w-full bg-muted rounded-full h-10 flex items-center px-4">
-                    <div className="w-2.5 h-2.5 bg-destructive rounded-full animate-pulse mr-3"></div>
-                    <span className="text-sm font-mono text-destructive">{formatRecordingTime(recordingTime)}</span>
+                <div className="flex-1 bg-muted rounded-full h-10 flex items-center px-4 gap-2">
+                    <div className="w-2.5 h-2.5 bg-destructive rounded-full animate-pulse"></div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleTogglePauseResume}>
+                        {recordingStatus === 'paused' ? <Play className="fill-current" /> : <Pause />}
+                        <span className="sr-only">{recordingStatus === 'paused' ? 'Resume' : 'Pause'} recording</span>
+                    </Button>
+                    <span className="text-sm font-mono text-muted-foreground">{formatRecordingTime(recordingTime)}</span>
                 </div>
-                <Button variant="ghost" size="icon" onClick={handleTogglePauseResume}>
-                  {recordingStatus === 'paused' ? <Play className="fill-current" /> : <Pause />}
-                   <span className="sr-only">{recordingStatus === 'paused' ? 'Resume' : 'Pause'} recording</span>
-                </Button>
                 <Button size="icon" className="h-10 w-10" onClick={handleStopAndSendRecording}>
                   <Send />
                   <span className="sr-only">Send recording</span>
@@ -1633,3 +1664,4 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     </div>
   );
 }
+

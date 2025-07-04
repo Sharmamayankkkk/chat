@@ -20,6 +20,12 @@ function ChatPageLoading() {
   )
 }
 
+const FULL_MESSAGE_SELECT_QUERY = `
+    *, 
+    profiles!user_id(*), 
+    replied_to_message:reply_to_message_id(*, profiles!user_id(*))
+`;
+
 export default function ChatPage() {
   const params = useParams<{ id: string }>()
   const searchParams = useSearchParams()
@@ -47,7 +53,7 @@ export default function ChatPage() {
     setIsLoading(true)
     const { data, error } = await supabase
       .from('messages')
-      .select('*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))')
+      .select(FULL_MESSAGE_SELECT_QUERY)
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true });
 
@@ -84,9 +90,13 @@ export default function ChatPage() {
         table: 'messages',
         filter: `chat_id=eq.${chatId}`
       }, async (payload) => {
+          // No need to fetch the full message here if the sender is handling it.
+          // We only need to add messages from OTHER users.
+          if (payload.new.user_id === loggedInUser?.id) return;
+
           const { data: fullMessage, error } = await supabase
             .from("messages")
-            .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
+            .select(FULL_MESSAGE_SELECT_QUERY)
             .eq("id", payload.new.id)
             .single()
           
@@ -107,7 +117,7 @@ export default function ChatPage() {
        }, async (payload) => {
           const { data: fullMessage, error } = await supabase
             .from("messages")
-            .select(`*, profiles!user_id(*), replied_to_message:reply_to_message_id(*, profiles!user_id(*))`)
+            .select(FULL_MESSAGE_SELECT_QUERY)
             .eq("id", payload.new.id)
             .single()
           
@@ -120,7 +130,7 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel);
     }
-  }, [chatId, supabase]);
+  }, [chatId, supabase, loggedInUser?.id]);
 
 
   if (isLoading || !isAppReady || !chat) {
