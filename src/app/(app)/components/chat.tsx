@@ -36,7 +36,7 @@ import {
   DialogClose,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { VoiceNotePlayer } from './voice-note-player';
 import { format } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -494,24 +494,11 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     };
 
     const handleReaction = async (message: Message, emoji: string) => {
-        const currentReactions = message.reactions ? { ...message.reactions } : {};
-        const usersForEmoji = currentReactions[emoji] || [];
-
-        if (usersForEmoji.includes(loggedInUser.id)) {
-            // User is removing their reaction
-            currentReactions[emoji] = usersForEmoji.filter(id => id !== loggedInUser.id);
-            if (currentReactions[emoji].length === 0) {
-                delete currentReactions[emoji];
-            }
-        } else {
-            // User is adding a reaction
-            currentReactions[emoji] = [...usersForEmoji, loggedInUser.id];
-        }
-
-        const { error } = await supabase
-            .from('messages')
-            .update({ reactions: currentReactions })
-            .eq('id', message.id);
+        const { error } = await supabase.rpc('toggle_reaction', { 
+            p_message_id: message.id, 
+            p_user_id: loggedInUser.id, 
+            p_emoji: emoji 
+        });
         
         if (error) {
             toast({ variant: 'destructive', title: 'Error updating reaction', description: error.message });
@@ -878,7 +865,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
             const isSticker = name === 'sticker.webp';
 
-            const attachmentContent = () => {
+            const attachmentElement = () => {
                 if (isSticker) {
                     return (
                          <Image
@@ -891,9 +878,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     );
                 }
                 if (type.startsWith('image/')) {
-                    return (
+                     return (
                         <button
-                          className="relative aspect-video w-full max-w-sm rounded-md overflow-hidden"
+                          className="relative block w-full max-w-xs cursor-pointer overflow-hidden rounded-lg border bg-muted"
                           onClick={() => {
                             setImageViewerSrc(message.attachment_url!);
                             setIsImageViewerOpen(true);
@@ -901,9 +888,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                         >
                             <Image
                                 src={message.attachment_url!}
-                                alt={name}
-                                fill
-                                className="object-cover"
+                                alt={name || 'Attached image'}
+                                width={320}
+                                height={240}
+                                className="h-auto w-full object-cover transition-transform group-hover/bubble:scale-105"
                                 sizes="(max-width: 768px) 80vw, 320px"
                             />
                         </button>
@@ -950,7 +938,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
             return (
                 <div className="space-y-2 break-words min-w-0">
-                    {attachmentContent()}
+                    {attachmentElement()}
                     {showCaption && <p className="whitespace-pre-wrap break-words">{parseContent(message.content)}</p>}
                 </div>
             );
