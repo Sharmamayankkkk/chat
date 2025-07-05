@@ -6,7 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { v4 as uuidv4 } from 'uuid';
 import { useSwipeable } from 'react-swipeable';
-import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock, CircleSlash, ArrowDown, AtSign, Image as ImageIcon } from 'lucide-react';
+import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock, CircleSlash, ArrowDown, AtSign, Image as ImageIcon, Info } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,7 +38,7 @@ import {
 } from '@/components/ui/dialog';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { VoiceNotePlayer } from './voice-note-player';
-import { format } from 'date-fns';
+import { format, isSameDay, isToday, isYesterday } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RequestDmDialog } from './request-dm-dialog';
 import { Badge } from '@/components/ui/badge';
@@ -48,6 +48,7 @@ import { PinnedMessagesDialog } from './pinned-messages-dialog';
 import { LinkPreview } from './link-preview';
 import { Icons } from "@/components/icons";
 import { ImageViewerDialog } from './image-viewer';
+import { MessageInfoDialog } from './message-info-dialog';
 
 interface ChatProps {
   chat: Chat;
@@ -81,6 +82,7 @@ const SYSTEM_MESSAGE_PREFIX = '[[SYS:';
 
 const FULL_MESSAGE_SELECT_QUERY = `
     *, 
+    read_by,
     profiles!user_id(*), 
     replied_to_message:reply_to_message_id(*, profiles!user_id(*))
 `;
@@ -97,8 +99,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         blockUser,
         unblockUser,
         blockedUsers,
-        reportUser,
-        forwardMessage,
     } = useAppContext();
     const [message, setMessage] = useState('');
     const [caption, setCaption] = useState('');
@@ -138,6 +138,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     
     const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
     const [imageViewerSrc, setImageViewerSrc] = useState('');
+    
+    const [messageInfo, setMessageInfo] = useState<Message | null>(null);
 
     const hasScrolledOnLoad = useRef(false);
 
@@ -304,8 +306,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         setIsSending(true);
         const tempId = `temp-${uuidv4()}`;
         
-        // --- Optimistic UI Update ---
-        const newMessageObject: Message = {
+        const optimisticMessage: Message = {
           id: tempId,
           created_at: new Date().toISOString(),
           chat_id: chat.id,
@@ -321,7 +322,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
           read_by: [loggedInUser.id]
         };
         
-        setMessages(current => [...current, newMessageObject]);
+        setMessages(current => [...current, optimisticMessage]);
         setMessage('');
         setCaption('');
         setReplyingTo(null);
@@ -330,7 +331,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
 
         try {
-            // --- Process and Upload Attachment ---
             let attachmentUrl: string | null = null;
             let attachmentMetadata: AttachmentMetadata | null = null;
             if (attachment) {
@@ -352,7 +352,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 attachmentMetadata = { name: file.name, type: file.type, size: file.size };
             }
             
-            // --- Insert message into DB and get the final version back ---
             let finalContent = contentToSave ?? content;
             const { data: insertedMessage, error } = await supabase
                 .from('messages')
@@ -369,11 +368,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
             if (error) throw error;
             
-            // --- Replace temp message with final version from DB ---
             if (insertedMessage) {
               setMessages(current => current.map(m => (m.id === tempId ? (insertedMessage as Message) : m)));
             } else {
-              // Fallback if select fails: remove temp and wait for realtime
               setMessages(current => current.filter(m => m.id !== tempId));
             }
 
@@ -397,7 +394,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             size: 0 
         };
 
-        const newMessageObject: Message = {
+        const optimisticMessage: Message = {
             id: tempId,
             created_at: new Date().toISOString(),
             chat_id: chat.id,
@@ -413,7 +410,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             read_by: [loggedInUser.id]
         };
 
-        setMessages(current => [...current, newMessageObject]);
+        setMessages(current => [...current, optimisticMessage]);
         setReplyingTo(null);
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
         
@@ -460,8 +457,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     };
 
     const handleDeleteForEveryone = async (messageId: number) => {
-        // The realtime listener will handle the UI update for other clients
-        // We handle our own UI update optimistically
         const originalMessages = chat.messages || [];
         const newMessages = originalMessages.map(m => 
             m.id === messageId 
@@ -483,7 +478,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
         if (error) {
             toast({ variant: 'destructive', title: "Error deleting message", description: error.message });
-            setMessages(originalMessages); // Revert on error
+            setMessages(originalMessages);
         }
     };
     
@@ -571,10 +566,13 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             mediaRecorderRef.current.onstop = async () => {
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 const audioFile = new File([audioBlob], `voice-note-${Date.now()}.webm`, { type: 'audio/webm' });
-                await handleSendMessage({ content: '', attachment: { file: audioFile, url: URL.createObjectURL(audioFile) } });
+                const optimisticUrl = URL.createObjectURL(audioBlob);
+                await handleSendMessage({ content: '', attachment: { file: audioFile, url: optimisticUrl } });
+                
                 stream.getTracks().forEach(track => track.stop());
                 if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
                 setIsRecording(false);
+                setRecordingTime(0);
             };
             
             mediaRecorderRef.current.onpause = () => {
@@ -620,14 +618,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
     const handleCancelRecording = () => {
         if (mediaRecorderRef.current) {
-            // onstop will not be called if we just stop tracks.
-            // We need to stop the recorder first, but prevent the onstop handler from sending the message.
-            mediaRecorderRef.current.onstop = () => {
-                mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
-                if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
-                setIsRecording(false);
-            };
+            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+            mediaRecorderRef.current.onstop = null; // Prevent sending
             mediaRecorderRef.current.stop();
+            if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+            setIsRecording(false);
+            setRecordingTime(0);
         }
     };
 
@@ -1025,16 +1021,51 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
       )
     }
 
-    const messagesWithSeparator = useMemo(() => {
-        if (!initialUnreadCount || initialUnreadCount <= 0 || !chat.messages || initialUnreadCount >= chat.messages.length) {
-          return chat.messages || [];
-        }
+    const messagesWithSeparators = useMemo(() => {
+        if (!chat.messages || chat.messages.length === 0) return [];
     
-        const unreadIndex = chat.messages.length - initialUnreadCount;
-        const newMessages: any[] = [...chat.messages];
-        newMessages.splice(unreadIndex, 0, { id: 'unread-separator', type: 'unread_separator' });
-        return newMessages;
+        const items: (Message | { type: 'separator' | 'unread_separator'; id: string; date: string })[] = [];
+        let lastDate: Date | null = null;
+        
+        const unreadIndex = initialUnreadCount > 0 && initialUnreadCount < chat.messages.length 
+            ? chat.messages.length - initialUnreadCount 
+            : -1;
+
+        chat.messages.forEach((message, index) => {
+            const messageDate = new Date(message.created_at);
+            if (!lastDate || !isSameDay(messageDate, lastDate)) {
+                let label = '';
+                if (isToday(messageDate)) {
+                    label = 'Today';
+                } else if (isYesterday(messageDate)) {
+                    label = 'Yesterday';
+                } else {
+                    label = format(messageDate, 'MMMM d, yyyy');
+                }
+                items.push({ type: 'separator', id: `sep-${message.id}`, date: label });
+            }
+            if (index === unreadIndex) {
+                 items.push({ type: 'unread_separator', id: 'unread-separator', date: '' });
+            }
+            items.push(message);
+            lastDate = messageDate;
+        });
+    
+        return items;
     }, [chat.messages, initialUnreadCount]);
+
+    const DateSeparator = ({ date }: { date: string }) => (
+        <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center">
+                <span className="bg-muted px-3 text-xs font-medium text-muted-foreground rounded-full">
+                    {date}
+                </span>
+            </div>
+        </div>
+    );
 
     const UnreadSeparator = () => (
         <div className="relative my-4">
@@ -1128,7 +1159,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
           </p>
         </div>
       </div>
-  );
+    );
     
     return (
       <div key={message.id} id={`message-${message.id}`} className={cn(
@@ -1239,6 +1270,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                                   {message.is_pinned ? <PinOff className="mr-2 h-4 w-4" /> : <Pin className="mr-2 h-4 w-4" />}
                                   <span>{message.is_pinned ? 'Unpin' : 'Pin'}</span>
                               </DropdownMenuItem>
+                               {isMyMessage && isGroup && typeof message.id === 'number' && (
+                                  <DropdownMenuItem onClick={() => setMessageInfo(message)}>
+                                      <Info className="mr-2 h-4 w-4" />
+                                      <span>Message Info</span>
+                                  </DropdownMenuItem>
+                              )}
                                {!isMyMessage && (
                                   <DropdownMenuItem onClick={() => { setMessageToReport(message); setIsReportDialogOpen(true); }}>
                                       <ShieldAlert className="mr-2 h-4 w-4" />
@@ -1282,6 +1319,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         <ImageViewerDialog open={isImageViewerOpen} onOpenChange={setIsImageViewerOpen} src={imageViewerSrc} />
         {chatPartner && <RequestDmDialog open={isRequestDmOpen} onOpenChange={setIsRequestDmOpen} targetUser={chatPartner} />}
         <ForwardMessageDialog messageToForward={messageToForward} onOpenChange={(open) => !open && setMessageToForward(null)} />
+        {messageInfo && <MessageInfoDialog message={messageInfo} chat={chat} open={!!messageInfo} onOpenChange={() => setMessageInfo(null)} />}
         {chatPartner && <ReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} userToReport={chatPartner} messageToReport={messageToReport} />}
         <PinnedMessagesDialog
             open={isPinnedDialogOpen}
@@ -1410,13 +1448,16 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     </div>
                   )}
                 </div>
-                {(messagesWithSeparator || [])
+                {(messagesWithSeparators || [])
                 .filter(item => {
-                    if (!('user_id' in item) || !item.user_id) return true; // Keep separators
+                    if (!('user_id' in item) || !item.user_id) return true;
                     return !blockedUsers.includes(item.user_id);
                 })
                 .map((item) => {
-                    if ('type' in item && item.type === 'unread_separator') {
+                    if (item.type === 'separator') {
+                        return <DateSeparator key={item.id} date={item.date} />;
+                    }
+                    if (item.type === 'unread_separator') {
                         return <UnreadSeparator key="unread-separator" />;
                     }
                     const message = item as Message;
@@ -1664,4 +1705,3 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     </div>
   );
 }
-

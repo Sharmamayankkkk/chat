@@ -22,6 +22,7 @@ function ChatPageLoading() {
 
 const FULL_MESSAGE_SELECT_QUERY = `
     *, 
+    read_by,
     profiles!user_id(*), 
     replied_to_message:reply_to_message_id(*, profiles!user_id(*))
 `;
@@ -74,12 +75,16 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (chatId && loggedInUser?.id) {
-      const markAsRead = () => resetUnreadCount(chatId)
+      const markAsRead = async () => {
+        resetUnreadCount(chatId)
+        // This is a simple implementation. A more robust system would use a server-side function.
+        await supabase.rpc('mark_chat_as_read', { p_chat_id: chatId, p_user_id: loggedInUser.id });
+      }
       markAsRead()
       window.addEventListener("focus", markAsRead)
       return () => window.removeEventListener("focus", markAsRead)
     }
-  }, [chatId, loggedInUser?.id, resetUnreadCount])
+  }, [chatId, loggedInUser?.id, resetUnreadCount, supabase])
   
   useEffect(() => {
     const channel = supabase
@@ -90,8 +95,6 @@ export default function ChatPage() {
         table: 'messages',
         filter: `chat_id=eq.${chatId}`
       }, async (payload) => {
-          // No need to fetch the full message here if the sender is handling it.
-          // We only need to add messages from OTHER users.
           if (payload.new.user_id === loggedInUser?.id) return;
 
           const { data: fullMessage, error } = await supabase
@@ -137,14 +140,13 @@ export default function ChatPage() {
     return <ChatPageLoading />
   }
 
-  // After loading, if the chat still isn't found, it's a 404
   if (!chat || !loggedInUser) {
     notFound()
   }
 
   return (
     <ChatUI
-      chat={{ ...chat, messages }} // Combine chat shell with loaded messages
+      chat={{ ...chat, messages }}
       loggedInUser={loggedInUser}
       setMessages={setMessages}
       highlightMessageId={highlightMessageId ? Number(highlightMessageId) : null}
@@ -156,5 +158,3 @@ export default function ChatPage() {
     />
   )
 }
-
-    
