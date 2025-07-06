@@ -36,7 +36,7 @@ import {
   DialogClose,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { VoiceNotePlayer } from './voice-note-player';
 import { format, isSameDay, isToday, isYesterday } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -93,11 +93,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         themeSettings, 
         allUsers, 
         dmRequests, 
-        sendDmRequest,
         leaveGroup,
         deleteGroup,
+        forwardMessage,
         blockUser,
         unblockUser,
+        reportUser,
         blockedUsers,
     } = useAppContext();
     const [message, setMessage] = useState('');
@@ -203,7 +204,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     [chat, loggedInUser.id, isChannel]);
     
     const isChatPartnerBlocked = useMemo(() => {
-        if (!chatPartner) return false;
+        if (!chatPartner || !blockedUsers) return false;
         return blockedUsers.includes(chatPartner.id);
     }, [blockedUsers, chatPartner]);
     
@@ -214,7 +215,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const pinnedMessages = useMemo(() => (chat.messages || []).filter(m => m.is_pinned), [chat.messages]);
 
     const isDmRestricted = useMemo(() => {
-        if (chat.type !== 'dm' || !chatPartner || loggedInUser.is_admin || chatPartner.is_admin) {
+        if (chat.type !== 'dm' || !chatPartner || !dmRequests || loggedInUser.is_admin || chatPartner.is_admin) {
             return false;
         }
 
@@ -243,7 +244,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     }, [chat.type, loggedInUser, chatPartner, dmRequests, chat.messages]);
     
     const existingRequest = useMemo(() => {
-        if (!chatPartner) return null;
+        if (!chatPartner || !dmRequests) return null;
         return dmRequests.find(req =>
             ((req.from_user_id === loggedInUser.id && req.to_user_id === chatPartner.id) ||
              (req.from_user_id === chatPartner.id && req.to_user_id === loggedInUser.id))
@@ -518,6 +519,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     };
 
     const handleReaction = async (message: Message, emoji: string) => {
+        if (typeof message.id === 'string') return;
         const { error } = await supabase.rpc('toggle_reaction', { 
             p_message_id: message.id, 
             p_user_id: loggedInUser.id, 
@@ -632,11 +634,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         
         const all = [
             { id: 'everyone', username: 'everyone', name: 'Notify everyone in this group', avatar_url: '' },
-            ...chat.participants.map(p => p.profiles)
+            ...chat.participants.map(p => p.profiles).filter((p): p is User => !!p)
         ];
 
         return all.filter(u => {
-            if (!u) return false;
             const query = mentionQuery.toLowerCase();
             const usernameMatch = (u.username || '').toLowerCase().includes(query);
             const nameMatch = (u.name || '').toLowerCase().includes(query);
@@ -821,9 +822,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             } else if (mention) {
                 const username = mention.substring(1);
                 const isEveryone = username === 'everyone';
-                const mentionedUser = allUsers.find(u => u.username === username);
+                const mentionedUser = allUsers?.find(u => u.username === username);
                 if (isEveryone || mentionedUser) {
-                    const isMe = mentionedUser && mentionedUser.id === loggedInUser.id;
+                    const isMe = mentionedUser && loggedInUser && mentionedUser.id === loggedInUser.id;
                     elements.push(
                         <span key={`mention-${offset}`} className={cn("font-semibold rounded-sm px-1", isMe ? "bg-amber-400/30 text-amber-800 dark:text-amber-200" : "bg-primary/20 text-primary")}>
                             {match}
@@ -858,7 +859,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         }
 
         return elements;
-    }, [customEmojiList, allUsers, loggedInUser.id]);
+    }, [customEmojiList, allUsers, loggedInUser?.id]);
 
     const renderMessageContent = (message: Message) => {
         if (message.attachment_url) {
@@ -984,6 +985,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const renderReactions = (message: Message) => {
       if (!message.reactions || Object.keys(message.reactions).length === 0) return null;
       
+      const isOptimistic = typeof message.id === 'string';
+
       return (
         <div className="absolute -bottom-4 -right-2 flex gap-1">
           {Object.entries(message.reactions).map(([emoji, userIds]) => {
@@ -995,6 +998,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                   <TooltipTrigger asChild>
                      <button
                         onClick={() => handleReaction(message, emoji)}
+                        disabled={isOptimistic}
                         className={cn(
                           "px-2 py-0.5 rounded-full text-xs flex items-center gap-1 transition-colors",
                           hasReacted ? "bg-primary/20 border border-primary" : "bg-background/80 border"
@@ -1123,13 +1127,14 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const sender = message.profiles;
     const isEditing = editingMessage?.id === message.id;
     const messageStatus = getMessageStatus(message);
+    const isOptimistic = typeof message.id === 'string';
 
     const swipeHandlers = useSwipeable({
       onSwipedRight: () => {
-        if (!isMyMessage) handleStartReply(message);
+        if (!isMyMessage && !isOptimistic) handleStartReply(message);
       },
       onSwipedLeft: () => {
-        if (isMyMessage) handleStartReply(message);
+        if (isMyMessage && !isOptimistic) handleStartReply(message);
       },
       trackMouse: true,
       preventScrollOnSwipe: true,
@@ -1222,12 +1227,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                       "absolute -top-4 flex items-center gap-1 opacity-0 group-hover/bubble:opacity-100 transition-opacity",
                       isMyMessage ? "left-[-8px]" : "right-[-8px]"
                   )}>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background" onClick={() => handleStartReply(message)}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background" onClick={() => handleStartReply(message)} disabled={isOptimistic}>
                           <Reply className="h-4 w-4" />
                         </Button>
                        <Popover>
                           <PopoverTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background">
+                              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background" disabled={isOptimistic}>
                                   <SmilePlus className="h-4 w-4" />
                               </Button>
                           </PopoverTrigger>
@@ -1248,11 +1253,11 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                               </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleStartReply(message)}>
+                              <DropdownMenuItem onClick={() => handleStartReply(message)} disabled={isOptimistic}>
                                 <Reply className="mr-2 h-4 w-4" />
                                 <span>Reply</span>
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setMessageToForward(message)}>
+                              <DropdownMenuItem onClick={() => setMessageToForward(message)} disabled={isOptimistic}>
                                   <Share2 className="mr-2 h-4 w-4" />
                                   <span>Forward</span>
                               </DropdownMenuItem>
@@ -1262,27 +1267,27 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                                       <span>Copy</span>
                                   </DropdownMenuItem>
                               )}
-                              <DropdownMenuItem onClick={() => handleToggleStar(message)}>
+                              <DropdownMenuItem onClick={() => handleToggleStar(message)} disabled={isOptimistic}>
                                   <Star className="mr-2 h-4 w-4" />
                                   <span>{message.is_starred ? 'Unstar' : 'Star'}</span>
                               </DropdownMenuItem>
-                               <DropdownMenuItem onClick={() => handleTogglePin(message)} disabled={isGroup && !isGroupAdmin}>
+                               <DropdownMenuItem onClick={() => handleTogglePin(message)} disabled={(isGroup && !isGroupAdmin) || isOptimistic}>
                                   {message.is_pinned ? <PinOff className="mr-2 h-4 w-4" /> : <Pin className="mr-2 h-4 w-4" />}
                                   <span>{message.is_pinned ? 'Unpin' : 'Pin'}</span>
                               </DropdownMenuItem>
-                               {isMyMessage && isGroup && typeof message.id === 'number' && (
+                               {isMyMessage && isGroup && !isOptimistic && (
                                   <DropdownMenuItem onClick={() => setMessageInfo(message)}>
                                       <Info className="mr-2 h-4 w-4" />
                                       <span>Message Info</span>
                                   </DropdownMenuItem>
                               )}
                                {!isMyMessage && (
-                                  <DropdownMenuItem onClick={() => { setMessageToReport(message); setIsReportDialogOpen(true); }}>
+                                  <DropdownMenuItem onClick={() => { setMessageToReport(message); setIsReportDialogOpen(true); }} disabled={isOptimistic}>
                                       <ShieldAlert className="mr-2 h-4 w-4" />
                                       <span>Report Message</span>
                                   </DropdownMenuItem>
                               )}
-                              {isMyMessage && typeof message.id === 'number' && (
+                              {isMyMessage && !isOptimistic && (
                               <>
                                   <DropdownMenuSeparator />
                                   {message.content && (
@@ -1318,7 +1323,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     <div className="flex h-dvh flex-col">
         <ImageViewerDialog open={isImageViewerOpen} onOpenChange={setIsImageViewerOpen} src={imageViewerSrc} />
         {chatPartner && <RequestDmDialog open={isRequestDmOpen} onOpenChange={setIsRequestDmOpen} targetUser={chatPartner} />}
-        <ForwardMessageDialog messageToForward={messageToForward} onOpenChange={(open) => !open && setMessageToForward(null)} />
+        {messageToForward && <ForwardMessageDialog messageToForward={messageToForward} onOpenChange={(open) => !open && setMessageToForward(null)} />}
         {messageInfo && <MessageInfoDialog message={messageInfo} chat={chat} open={!!messageInfo} onOpenChange={() => setMessageInfo(null)} />}
         {chatPartner && <ReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} userToReport={chatPartner} messageToReport={messageToReport} />}
         <PinnedMessagesDialog
@@ -1451,6 +1456,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 {(messagesWithSeparators || [])
                 .filter(item => {
                     if (!('user_id' in item) || !item.user_id) return true;
+                    if (!blockedUsers) return true;
                     return !blockedUsers.includes(item.user_id);
                 })
                 .map((item) => {
