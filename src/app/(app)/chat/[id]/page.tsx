@@ -77,8 +77,8 @@ export default function ChatPage() {
     if (chatId && loggedInUser?.id) {
       const markAsRead = async () => {
         resetUnreadCount(chatId)
-        // This is a simple implementation. A more robust system would use a server-side function.
-        await supabase.rpc('mark_chat_as_read', { p_chat_id: chatId, p_user_id: loggedInUser.id });
+        // RPC call to a database function to mark all messages in the chat as read for the user.
+        await supabase.rpc('mark_messages_as_read', { p_chat_id: chatId, p_user_id: loggedInUser.id });
       }
       markAsRead()
       window.addEventListener("focus", markAsRead)

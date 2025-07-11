@@ -25,6 +25,10 @@ interface MessageInfoDialogProps {
 export function MessageInfoDialog({ message, chat, open, onOpenChange }: MessageInfoDialogProps) {
   
   const { readBy, deliveredTo } = useMemo(() => {
+    if (!message || !chat.participants) {
+      return { readBy: [], deliveredTo: [] };
+    }
+
     const readerIds = new Set(message.read_by || []);
     const otherParticipants = chat.participants.filter(p => p.user_id !== message.user_id);
 
