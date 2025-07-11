@@ -52,12 +52,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const initialDataLoaded = useRef(false);
+  const notificationPermissionRequested = useRef(false);
 
   const requestNotificationPermission = useCallback(async () => {
+    if (notificationPermissionRequested.current) return;
+    notificationPermissionRequested.current = true;
+
     if ("Notification" in window && Notification.permission === "default") {
-      await Notification.requestPermission()
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission === "granted") {
+          new Notification("Notifications Enabled", {
+            body: "You will now receive message notifications.",
+            icon: "/logo/light_KCS.png",
+          });
+        }
+      } catch (error) {
+        console.error("Error requesting notification permission:", error);
+      }
     }
-  }, [])
+  }, []);
 
   const fetchInitialData = useCallback(async (session: Session) => {
     if (initialDataLoaded.current) return;
@@ -66,7 +80,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
         const { user } = session;
 
-        // Fetch profile first, it's essential
         const { data: profile, error: profileError } = await supabaseRef.current.from("profiles").select("*").eq("id", user.id).single();
         if (profileError || !profile) {
             throw new Error("Could not fetch user profile. Please sign out and sign in again.");
@@ -77,7 +90,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         setLoggedInUser(fullUserProfile);
 
-        // Fetch other non-critical data in parallel
         const [
             { data: allUsersData },
             { data: dmRequestsData },
@@ -94,7 +106,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setDmRequests((dmRequestsData as DmRequest[]) || []);
         setBlockedUsers(blockedData?.map((b) => b.blocked_id) || []);
 
-        // Fetch chat shells (without messages)
         const chatIds = participantRecords?.map(p => p.chat_id) || [];
         if (chatIds.length > 0) {
             const { data: chatsData } = await supabaseRef.current
@@ -105,7 +116,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const initialChats = (chatsData || []).map(c => ({...c, messages: [], unreadCount: 0})) as Chat[];
             setChats(initialChats);
 
-            // Fetch last messages in the background to not block UI
             const { data: lastMessages } = await supabaseRef.current.rpc('get_last_messages_for_chats', { p_chat_ids: chatIds });
             if (lastMessages) {
                 setChats(currentChats => {
@@ -151,7 +161,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setIsReady(true);
     });
     
-    // Initial load check
     supabaseRef.current.auth.getSession().then(({ data: { session } }) => {
         if (session) {
             setSession(session);
@@ -198,16 +207,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (shouldShowNotification) {
         const sender = allUsers.find((u) => u.id === newMessage.user_id);
         if (sender) {
-          const notification = new Notification(sender.name, {
-            body: newMessage.content || (newMessage.attachment_metadata?.name ? `Sent: ${newMessage.attachment_metadata.name}` : "Sent an attachment"),
-            icon: sender.avatar_url || "/logo/light_KCS.png",
-            tag: `chat-${newMessage.chat_id}`,
-          });
-          notification.onclick = () => {
-            window.focus();
-            notification.close();
-            router.push(`/chat/${newMessage.chat_id}`);
-          };
+          const title = sender.name || "New Message";
+          const body = newMessage.content || (newMessage.attachment_metadata?.name ? `Sent: ${newMessage.attachment_metadata.name}` : "Sent an attachment");
+          
+          try {
+            const notification = new Notification(title, {
+              body: body,
+              icon: sender.avatar_url || "/logo/light_KCS.png",
+              tag: `chat-${newMessage.chat_id}`,
+            });
+            notification.onclick = () => {
+              window.focus();
+              notification.close();
+              router.push(`/chat/${newMessage.chat_id}`);
+            };
+          } catch(error) {
+            console.error("Error showing notification:", error);
+          }
         }
       }
     },
@@ -223,7 +239,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return;
     }
     
-    // Protection against creating duplicate subscriptions
     if (subscriptionsRef.current.length > 0) return;
 
     const channels = [
