@@ -196,6 +196,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     
     const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
     const [toolbarPosition, setToolbarPosition] = useState<{ top: number; left: number } | null>(null);
+    const toolbarRef = useRef<HTMLDivElement>(null);
 
     const hasScrolledOnLoad = useRef(false);
 
@@ -721,24 +722,30 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     };
     
     const handleTextSelection = () => {
-        const textarea = textareaRef.current;
-        if (!textarea) return;
+        setTimeout(() => {
+            const textarea = textareaRef.current;
+            if (!textarea) return;
 
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
 
-        if (start !== end) {
-            setSelection({ start, end });
-            const properties = getCaretCoordinates(textarea, start);
-            setToolbarPosition({ top: properties.top - 40, left: properties.left });
-        } else {
-            setSelection(null);
-            setToolbarPosition(null);
-        }
+            if (start !== end) {
+                setSelection({ start, end });
+                const rect = textarea.getBoundingClientRect();
+                const toolbarHeight = 40;
+                setToolbarPosition({
+                    top: rect.top - toolbarHeight - 5,
+                    left: rect.left + (rect.width / 2),
+                });
+            } else {
+                setSelection(null);
+                setToolbarPosition(null);
+            }
+        }, 0);
     };
 
     const applyFormatting = (format: 'bold' | 'italic' | 'strikethrough' | 'code') => {
-        if (!selection) return;
+        if (!selection || !textareaRef.current) return;
 
         const { start, end } = selection;
         const selectedText = message.substring(start, end);
@@ -757,15 +764,15 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             message.substring(end);
 
         setMessage(newText);
-        setSelection(null);
-        setToolbarPosition(null);
-
-        // Refocus textarea and set cursor position
+        
+        // Refocus textarea and set cursor position after state update
+        const newCursorPos = start + prefix.length + selectedText.length + suffix.length;
         setTimeout(() => {
             textareaRef.current?.focus();
-            const newCursorPos = start + prefix.length + selectedText.length + suffix.length;
             textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos);
-        }, 0);
+            setSelection(null);
+            setToolbarPosition(null);
+        }, 10);
     };
 
     const handleMentionSelect = (username: string) => {
@@ -794,7 +801,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         }, 0);
     };
 
-    const handleMentionKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (mentionQuery !== null && mentionableUsers.length > 0) {
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
@@ -809,11 +816,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 e.preventDefault();
                 setMentionQuery(null);
             }
-        } else if (e.key === 'Enter' && e.shiftKey) {
-            // Default browser behavior (new line) will happen, so we don't prevent it.
-        } else if (e.key === 'Enter' && !e.shiftKey) {
-            // We now use the Send button explicitly, so Enter should just be a newline.
-            // No action needed here, let it act as a normal newline.
         }
     };
     
@@ -1713,16 +1715,18 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             <div className="relative">
                {toolbarPosition && (
                     <div
+                        ref={toolbarRef}
                         className="absolute z-10 bg-background border rounded-md shadow-lg p-1 flex gap-1"
                         style={{
                             top: toolbarPosition.top,
                             left: toolbarPosition.left,
+                            transform: 'translateX(-50%)',
                         }}
                     >
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormatting('bold')}><Bold className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormatting('italic')}><Italic className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormatting('strikethrough')}><Strikethrough className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormatting('code')}><Code className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormatting('bold')}><Bold className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormatting('italic')}><Italic className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormatting('strikethrough')}><Strikethrough className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormatting('code')}><Code className="h-4 w-4" /></Button>
                     </div>
                 )}
                {mentionQuery !== null && (
@@ -1764,9 +1768,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 rows={1}
                 value={message}
                 onChange={handleMessageChange}
-                onKeyDown={handleMentionKeyDown}
+                onKeyDown={handleKeyDown}
                 onSelect={handleTextSelection}
-                onBlur={() => { setSelection(null); setToolbarPosition(null); }}
+                onBlur={() => { setTimeout(() => { setSelection(null); setToolbarPosition(null); }, 150); }}
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
                 <Popover open={isEmojiOpen} onOpenChange={setIsEmojiOpen}>
@@ -1852,7 +1856,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     <TooltipContent>Voice message</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
-                <Button size="icon" className="ml-2 h-8 w-8" onClick={() => handleSendMessage({ content: message })} disabled={isSending}>
+                <Button size="icon" className="ml-2 h-8 w-8" onClick={() => handleSendMessage({ content: message })} disabled={isSending || !message.trim()}>
                   {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </Button>
               </div>
@@ -1862,95 +1866,4 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
       </div>
     </div>
   );
-}
-
-// Helper to get coordinates of the cursor in a textarea
-function getCaretCoordinates(element: HTMLTextAreaElement, position: number) {
-    const isBrowser = typeof window !== 'undefined';
-    if (!isBrowser) {
-        throw new Error('getCaretCoordinates should only be called in a browser environment.');
-    }
-
-    const debug = false;
-    
-    const properties = [
-        'direction',
-        'boxSizing',
-        'width',
-        'height',
-        'overflowX',
-        'overflowY',
-        'borderTopWidth',
-        'borderRightWidth',
-        'borderBottomWidth',
-        'borderLeftWidth',
-        'paddingTop',
-        'paddingRight',
-        'paddingBottom',
-        'paddingLeft',
-        'fontStyle',
-        'fontVariant',
-        'fontWeight',
-        'fontStretch',
-        'fontSize',
-        'fontSizeAdjust',
-        'lineHeight',
-        'fontFamily',
-        'textAlign',
-        'textTransform',
-        'textIndent',
-        'textDecoration',
-        'letterSpacing',
-        'wordSpacing',
-    ];
-
-    const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
-    
-    const div = document.createElement('div');
-    div.id = 'input-textarea-caret-position-mirror-div';
-    document.body.appendChild(div);
-
-    const style = div.style;
-    const computed = window.getComputedStyle(element);
-
-    style.whiteSpace = 'pre-wrap';
-    style.wordWrap = 'break-word';
-    style.position = 'absolute';
-    if (!debug) style.visibility = 'hidden';
-
-    properties.forEach((prop) => {
-        style[prop as any] = computed[prop as any];
-    });
-
-    if (isFirefox) {
-        if (element.scrollHeight > parseInt(computed.height))
-            style.overflowY = 'scroll';
-    } else {
-        style.overflow = 'hidden';
-    }
-
-    div.textContent = element.value.substring(0, position);
-    
-    const span = document.createElement('span');
-    span.textContent = element.value.substring(position) || '.';
-    div.appendChild(span);
-
-    const coordinates = {
-        top: span.offsetTop + parseInt(computed['borderTopWidth']),
-        left: span.offsetLeft + parseInt(computed['borderLeftWidth']),
-        height: parseInt(computed['lineHeight'])
-    };
-    
-    const rect = element.getBoundingClientRect();
-    coordinates.top = rect.top + coordinates.top - element.scrollTop;
-    coordinates.left = rect.left + coordinates.left;
-
-
-    if (debug) {
-        span.style.backgroundColor = '#aaa';
-    } else {
-        document.body.removeChild(div);
-    }
-
-    return coordinates;
 }
