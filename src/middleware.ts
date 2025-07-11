@@ -18,16 +18,8 @@ export async function middleware(request: NextRequest) {
           return request.cookies.get(name)?.value
         },
         set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
+          // The request cookies are only read, not written to.
+          // The single response object is used to set cookies.
           response.cookies.set({
             name,
             value,
@@ -35,16 +27,8 @@ export async function middleware(request: NextRequest) {
           })
         },
         remove(name: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value: "",
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
+          // The request cookies are only read, not written to.
+          // The single response object is used to remove cookies.
           response.cookies.set({
             name,
             value: "",
@@ -60,8 +44,13 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const { pathname } = request.nextUrl
+  
   const publicRoutes = ['/login', '/signup', '/forgot-password', '/update-password', '/auth/callback'];
-  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
+  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route)) || pathname === '/join';
+
+  if (pathname.startsWith('/join/')) {
+    return response;
+  }
 
   // If the user is not logged in and the route is not public, redirect to login
   if (!user && !isPublicRoute) {
