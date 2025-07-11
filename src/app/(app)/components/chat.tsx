@@ -721,12 +721,82 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         }
     };
     
+    const getCaretCoordinates = (element: HTMLTextAreaElement, position: number) => {
+        const isBrowser = typeof window !== 'undefined'
+        if (!isBrowser) {
+          throw new Error('getCaretCoordinates should only be called in a browser environment.')
+        }
+
+        const div = document.createElement('div')
+        document.body.appendChild(div)
+      
+        const style = div.style
+        const computed = window.getComputedStyle(element)
+      
+        style.whiteSpace = 'pre-wrap'
+        style.wordWrap = 'break-word'
+        style.position = 'absolute'
+        style.visibility = 'hidden'
+      
+        const properties = [
+          'direction',
+          'boxSizing',
+          'width',
+          'height',
+          'overflowX',
+          'overflowY',
+          'borderTopWidth',
+          'borderRightWidth',
+          'borderBottomWidth',
+          'borderLeftWidth',
+          'paddingTop',
+          'paddingRight',
+          'paddingBottom',
+          'paddingLeft',
+          'fontStyle',
+          'fontVariant',
+          'fontWeight',
+          'fontStretch',
+          'fontSize',
+          'fontSizeAdjust',
+          'lineHeight',
+          'fontFamily',
+          'textAlign',
+          'textTransform',
+          'textIndent',
+          'textDecoration',
+          'letterSpacing',
+          'wordSpacing',
+          'tabSize',
+        ]
+      
+        properties.forEach(prop => {
+          style[prop as any] = computed[prop as any]
+        })
+      
+        div.textContent = element.value.substring(0, position)
+      
+        const span = document.createElement('span')
+        span.textContent = element.value.substring(position) || '.'
+        div.appendChild(span)
+      
+        const coordinates = {
+          top: span.offsetTop + parseInt(computed.borderTopWidth),
+          left: span.offsetLeft + parseInt(computed.borderLeftWidth),
+          height: parseInt(computed.lineHeight),
+        }
+      
+        div.remove()
+      
+        return coordinates
+      }
+    
     const handleTextSelection = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
       const textarea = e.currentTarget;
       const start = textarea.selectionStart;
       const end = textarea.selectionEnd;
   
-      if (start === end) {
+      if (start === end || !textareaRef.current) {
         setSelection(null);
         setToolbarPosition(null);
         return;
@@ -734,57 +804,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
   
       setSelection({ start, end });
   
-      const getCaretCoordinates = (element: any, position: number) => {
-        const isBrowser = typeof window !== 'undefined';
-        if (!isBrowser) {
-          return { top: 0, left: 0, height: 0 };
-        }
-    
-        const div = document.createElement('div');
-        div.id = 'input-textarea-caret-position-mirror-div';
-        document.body.appendChild(div);
-    
-        const style = div.style;
-        const computed = window.getComputedStyle(element);
-        const properties = [
-            'direction', 'boxSizing', 'width', 'height', 'overflowX', 'overflowY',
-            'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
-            'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-            'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize',
-            'fontSizeAdjust', 'lineHeight', 'fontFamily', 'textAlign', 'textTransform',
-            'textIndent', 'textDecoration', 'letterSpacing', 'wordSpacing', 'tabSize',
-            'MozTabSize'
-        ];
-        
-        properties.forEach(prop => {
-            style[prop as any] = computed[prop as any];
-        });
-    
-        style.whiteSpace = 'pre-wrap';
-        style.wordWrap = 'break-word';
-        style.position = 'absolute'; 
-        style.visibility = 'hidden'; 
-    
-        div.textContent = element.value.substring(0, position);
-    
-        const span = document.createElement('span');
-        span.textContent = element.value.substring(position) || '.'; 
-        div.appendChild(span);
-    
-        const coordinates = {
-            top: span.offsetTop + parseInt(computed.borderTopWidth),
-            left: span.offsetLeft + parseInt(computed.borderLeftWidth),
-            height: parseInt(computed.lineHeight)
-        };
-        
-        document.body.removeChild(div);
-        return coordinates;
-      };
-  
       const rect = textarea.getBoundingClientRect();
       const caretPos = getCaretCoordinates(textarea, start);
       
-      const toolbarHeight = toolbarRef.current?.offsetHeight || 40; // Approx height
+      const toolbarHeight = toolbarRef.current?.offsetHeight || 40;
 
       setToolbarPosition({
         top: rect.top + window.scrollY + caretPos.top - toolbarHeight - 5,
@@ -813,7 +836,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
         setMessage(newText);
         
-        // Refocus textarea and set cursor position after state update
         const newCursorPos = start + prefix.length + selectedText.length + suffix.length;
         setTimeout(() => {
             textareaRef.current?.focus();
@@ -864,9 +886,11 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 e.preventDefault();
                 setMentionQuery(null);
             }
-        } else if (e.key === 'Enter' && !e.shiftKey) {
-             e.preventDefault();
-             if(message.trim()) handleSendMessage({ content: message });
+        } else if (e.key === 'Enter' && e.shiftKey) {
+             // Let default behavior (new line) happen
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if(message.trim()) handleSendMessage({ content: message });
         }
     };
     
@@ -1416,13 +1440,13 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                       "absolute -top-4 flex items-center gap-1 opacity-0 group-hover/bubble:opacity-100 transition-opacity",
                       isMyMessage ? "left-[-8px]" : "right-[-8px]"
                   )}>
-                        <Popover>
-                          <PopoverTrigger asChild>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background">
                                   <MoreVertical className="h-4 w-4" />
                               </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-1">
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-auto p-1">
                               <DropdownMenuItem onClick={() => handleStartReply(message)} disabled={isOptimistic}>
                                 <Reply className="mr-2 h-4 w-4" />
                                 <span>Reply</span>
@@ -1472,8 +1496,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                                   </DropdownMenuItem>
                               </>
                               )}
-                          </PopoverContent>
-                      </Popover>
+                          </DropdownMenuContent>
+                      </DropdownMenu>
                        <Popover>
                           <PopoverTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background" disabled={isOptimistic}>
@@ -1816,8 +1840,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
               <TextareaAutosize
                 ref={textareaRef}
                 placeholder={isGroup ? "Type @ to mention users..." : "Type a message..."}
-                className={cn("pr-28 min-h-[40px] max-h-40 resize-none", replyingTo && "rounded-t-none")}
-                rows={1}
+                className={cn("pr-28 min-h-[40px] max-h-40 resize-none w-full border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 rounded-md", replyingTo && "rounded-t-none")}
+                minRows={1}
+                maxRows={5}
                 value={message}
                 onChange={handleMessageChange}
                 onKeyDown={handleKeyDown}
