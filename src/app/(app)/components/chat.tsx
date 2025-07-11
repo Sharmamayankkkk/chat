@@ -6,7 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { v4 as uuidv4 } from 'uuid';
 import { useSwipeable } from 'react-swipeable';
-import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock, CircleSlash, ArrowDown, AtSign, Image as ImageIcon, Info } from 'lucide-react';
+import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock, CircleSlash, ArrowDown, AtSign, Image as ImageIcon, Info, Bold, Italic, Strikethrough, Code } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -107,8 +107,7 @@ const parseMarkdown = (text: string | null) => {
     const elements: (string | React.ReactNode)[] = [];
     let lastIndex = 0;
 
-    // Combined regex for all markdown patterns
-    const regex = /(\*\*.*?\*\*|__.*?__|~~.*?~~|_.*?_|\`.*?\`|\|\|.*?\|\||https?:\/\/[^\s]+|@[\w\d_]+|:[a-zA-Z0-9_]+:)/g;
+    const regex = /(\*\*.*?\*\*|_.*?_|~~.*?~~|`.*?`|\|\|.*?\|\|)/g;
 
     text.replace(regex, (match, content, offset) => {
         if (offset > lastIndex) {
@@ -194,6 +193,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const [imageViewerSrc, setImageViewerSrc] = useState('');
     
     const [messageInfo, setMessageInfo] = useState<Message | null>(null);
+    
+    const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
+    const [toolbarPosition, setToolbarPosition] = useState<{ top: number; left: number } | null>(null);
 
     const hasScrolledOnLoad = useRef(false);
 
@@ -412,7 +414,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 .insert({
                     chat_id: chat.id,
                     user_id: loggedInUser.id,
-                    content: finalContent,
+                    content: finalContent.trim(),
                     attachment_url: attachmentUrl,
                     attachment_metadata: attachmentMetadata,
                     reply_to_message_id: replyingTo?.id,
@@ -572,7 +574,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     };
 
     const handleReaction = async (message: Message, emoji: string) => {
-        if (typeof message.id === 'string') return;
+        if (typeof message.id === 'string') {
+             toast({ variant: 'destructive', title: 'Cannot react yet', description: 'Please wait for the message to be sent.' });
+             return;
+        }
         const { error } = await supabase.rpc('toggle_reaction', { 
             p_message_id: message.id, 
             p_user_id: loggedInUser.id, 
@@ -714,6 +719,54 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             setMentionQuery(null);
         }
     };
+    
+    const handleTextSelection = () => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+
+        if (start !== end) {
+            setSelection({ start, end });
+            const properties = getCaretCoordinates(textarea, start);
+            setToolbarPosition({ top: properties.top - 40, left: properties.left });
+        } else {
+            setSelection(null);
+            setToolbarPosition(null);
+        }
+    };
+
+    const applyFormatting = (format: 'bold' | 'italic' | 'strikethrough' | 'code') => {
+        if (!selection) return;
+
+        const { start, end } = selection;
+        const selectedText = message.substring(start, end);
+        let prefix, suffix;
+
+        switch (format) {
+            case 'bold': prefix = '**'; suffix = '**'; break;
+            case 'italic': prefix = '_'; suffix = '_'; break;
+            case 'strikethrough': prefix = '~~'; suffix = '~~'; break;
+            case 'code': prefix = '`'; suffix = '`'; break;
+        }
+
+        const newText = 
+            message.substring(0, start) +
+            prefix + selectedText + suffix +
+            message.substring(end);
+
+        setMessage(newText);
+        setSelection(null);
+        setToolbarPosition(null);
+
+        // Refocus textarea and set cursor position
+        setTimeout(() => {
+            textareaRef.current?.focus();
+            const newCursorPos = start + prefix.length + selectedText.length + suffix.length;
+            textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos);
+        }, 0);
+    };
 
     const handleMentionSelect = (username: string) => {
         const textarea = textareaRef.current;
@@ -756,9 +809,11 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 e.preventDefault();
                 setMentionQuery(null);
             }
+        } else if (e.key === 'Enter' && e.shiftKey) {
+            // Default browser behavior (new line) will happen, so we don't prevent it.
         } else if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSendMessage({ content: message });
+            // We now use the Send button explicitly, so Enter should just be a newline.
+            // No action needed here, let it act as a normal newline.
         }
     };
     
@@ -774,6 +829,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     };
 
     const handleToggleStar = async (messageToStar: Message) => {
+        if (typeof messageToStar.id === 'string') return;
         const { error } = await supabase
             .from('messages')
             .update({ is_starred: !messageToStar.is_starred })
@@ -786,6 +842,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
     const handleTogglePin = async (messageToPin: Message) => {
         if (isGroup && !isGroupAdmin) return;
+        if (typeof messageToPin.id === 'string') return;
 
         const newIsPinned = !messageToPin.is_pinned;
 
@@ -852,6 +909,21 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const parseContent = useCallback((content: string | null): (string | React.ReactNode)[] => {
         if (!content) return [];
 
+        let processedContent = content;
+
+        // Early return for forwarded messages to handle them separately
+        if (processedContent.startsWith('Forwarded from')) {
+            const parts = processedContent.split('\n');
+            const forwardLine = parts[0];
+            const restOfContent = parts.slice(1).join('\n');
+            return [
+                <span key="forwarded-line" className="block text-xs italic opacity-80 font-semibold mb-2">
+                    {forwardLine.replace(/\*\*/g, '')}
+                </span>,
+                ...parseMarkdown(restOfContent)
+            ];
+        }
+
         const elements: (string | React.ReactNode)[] = [];
         let lastIndex = 0;
 
@@ -860,7 +932,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             return [name, url];
         }));
 
-        const combinedRegex = /(^Forwarded from \*\*.*\*\*)|(https?:\/\/[^\s]+)|(@[\w\d_]+)|(:[a-zA-Z0-9_]+:)/g;
+        const combinedRegex = /(https?:\/\/[^\s]+)|(@[\w\d_]+)|(:[a-zA-Z0-9_]+:)/g;
 
         const parsedWithMarkdown = parseMarkdown(content);
 
@@ -870,18 +942,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             const subElements: (string | React.ReactNode)[] = [];
             let subLastIndex = 0;
 
-            node.replace(combinedRegex, (match, forwarded, url, mention, emoji, offset) => {
+            node.replace(combinedRegex, (match, url, mention, emoji, offset) => {
                  if (offset > subLastIndex) {
                     subElements.push(node.substring(subLastIndex, offset));
                 }
 
-                if (forwarded) {
-                    subElements.push(
-                        <span key={`forwarded-${offset}`} className="block text-xs italic opacity-80 font-semibold mb-2">
-                            {match.replace(/\*\*/g, '')}
-                        </span>
-                    );
-                } else if (mention) {
+                if (mention) {
                     const username = mention.substring(1);
                     const isEveryone = username === 'everyone';
                     const mentionedUser = allUsers?.find(u => u.username === username);
@@ -1645,6 +1711,20 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 </div>
             )}
             <div className="relative">
+               {toolbarPosition && (
+                    <div
+                        className="absolute z-10 bg-background border rounded-md shadow-lg p-1 flex gap-1"
+                        style={{
+                            top: toolbarPosition.top,
+                            left: toolbarPosition.left,
+                        }}
+                    >
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormatting('bold')}><Bold className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormatting('italic')}><Italic className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormatting('strikethrough')}><Strikethrough className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormatting('code')}><Code className="h-4 w-4" /></Button>
+                    </div>
+                )}
                {mentionQuery !== null && (
                     <Card className="absolute bottom-full left-0 mb-2 w-72 shadow-lg z-50">
                         <ScrollArea className="max-h-48">
@@ -1685,6 +1765,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 value={message}
                 onChange={handleMessageChange}
                 onKeyDown={handleMentionKeyDown}
+                onSelect={handleTextSelection}
+                onBlur={() => { setSelection(null); setToolbarPosition(null); }}
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
                 <Popover open={isEmojiOpen} onOpenChange={setIsEmojiOpen}>
@@ -1780,4 +1862,95 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
       </div>
     </div>
   );
+}
+
+// Helper to get coordinates of the cursor in a textarea
+function getCaretCoordinates(element: HTMLTextAreaElement, position: number) {
+    const isBrowser = typeof window !== 'undefined';
+    if (!isBrowser) {
+        throw new Error('getCaretCoordinates should only be called in a browser environment.');
+    }
+
+    const debug = false;
+    
+    const properties = [
+        'direction',
+        'boxSizing',
+        'width',
+        'height',
+        'overflowX',
+        'overflowY',
+        'borderTopWidth',
+        'borderRightWidth',
+        'borderBottomWidth',
+        'borderLeftWidth',
+        'paddingTop',
+        'paddingRight',
+        'paddingBottom',
+        'paddingLeft',
+        'fontStyle',
+        'fontVariant',
+        'fontWeight',
+        'fontStretch',
+        'fontSize',
+        'fontSizeAdjust',
+        'lineHeight',
+        'fontFamily',
+        'textAlign',
+        'textTransform',
+        'textIndent',
+        'textDecoration',
+        'letterSpacing',
+        'wordSpacing',
+    ];
+
+    const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+    
+    const div = document.createElement('div');
+    div.id = 'input-textarea-caret-position-mirror-div';
+    document.body.appendChild(div);
+
+    const style = div.style;
+    const computed = window.getComputedStyle(element);
+
+    style.whiteSpace = 'pre-wrap';
+    style.wordWrap = 'break-word';
+    style.position = 'absolute';
+    if (!debug) style.visibility = 'hidden';
+
+    properties.forEach((prop) => {
+        style[prop as any] = computed[prop as any];
+    });
+
+    if (isFirefox) {
+        if (element.scrollHeight > parseInt(computed.height))
+            style.overflowY = 'scroll';
+    } else {
+        style.overflow = 'hidden';
+    }
+
+    div.textContent = element.value.substring(0, position);
+    
+    const span = document.createElement('span');
+    span.textContent = element.value.substring(position) || '.';
+    div.appendChild(span);
+
+    const coordinates = {
+        top: span.offsetTop + parseInt(computed['borderTopWidth']),
+        left: span.offsetLeft + parseInt(computed['borderLeftWidth']),
+        height: parseInt(computed['lineHeight'])
+    };
+    
+    const rect = element.getBoundingClientRect();
+    coordinates.top = rect.top + coordinates.top - element.scrollTop;
+    coordinates.left = rect.left + coordinates.left;
+
+
+    if (debug) {
+        span.style.backgroundColor = '#aaa';
+    } else {
+        document.body.removeChild(div);
+    }
+
+    return coordinates;
 }
