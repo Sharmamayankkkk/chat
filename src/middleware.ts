@@ -18,25 +18,13 @@ export async function middleware(request: NextRequest) {
           return request.cookies.get(name)?.value
         },
         set(name: string, value: string, options: CookieOptions) {
-          // The request cookies are only read, not written to.
-          // The single response object is used to set cookies.
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          })
+          response.cookies.set({ name, value, ...options })
         },
         remove(name: string, options: CookieOptions) {
-          // The request cookies are only read, not written to.
-          // The single response object is used to remove cookies.
-          response.cookies.set({
-            name,
-            value: "",
-            ...options,
-          })
+          response.cookies.set({ name, value: "", ...options })
         },
       },
-    },
+    }
   )
 
   const {
@@ -45,8 +33,8 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
   
-  const publicRoutes = ['/login', '/signup', '/forgot-password', '/update-password', '/auth/callback'];
-  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route)) || pathname === '/join';
+  const publicRoutes = ['/login', '/signup', '/forgot-password', '/update-password', '/auth/callback', '/complete-profile'];
+  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
 
   if (pathname.startsWith('/join/')) {
     return response;
@@ -60,11 +48,28 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // If the user is logged in and tries to access login/signup, redirect to chat
-  const authRoutes = ['/login', '/signup'];
-  const isAuthRoute = authRoutes.some(route => pathname.startsWith(route));
-  if (user && isAuthRoute) {
-    return NextResponse.redirect(new URL('/chat', request.url))
+  // If the user is logged in, check if their profile is complete
+  if (user) {
+    const { data: profile } = await supabase.from('profiles').select('username').eq('id', user.id).single();
+    
+    const isProfileComplete = profile && profile.username;
+    
+    // If profile is incomplete, redirect to the completion page, unless they are already there.
+    if (!isProfileComplete && pathname !== '/complete-profile') {
+      return NextResponse.redirect(new URL('/complete-profile', request.url));
+    }
+    
+    // If profile is complete but they are on the completion page, redirect to chat.
+    if (isProfileComplete && pathname === '/complete-profile') {
+      return NextResponse.redirect(new URL('/chat', request.url));
+    }
+
+    // If the user is logged in and tries to access login/signup, redirect to chat
+    const authRoutes = ['/login', '/signup'];
+    const isAuthRoute = authRoutes.some(route => pathname.startsWith(route));
+    if (isAuthRoute) {
+      return NextResponse.redirect(new URL('/chat', request.url))
+    }
   }
 
   return response
@@ -78,7 +83,7 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - and files with extensions like svg, png, jpg, etc.
+     * - and files with extensions like svg, png, jpg, jpeg, gif, wepb
      */
     "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
