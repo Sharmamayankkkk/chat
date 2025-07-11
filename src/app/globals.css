@@ -71,3 +71,21 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  .spoiler {
+    @apply bg-foreground/20 text-transparent rounded-sm transition-colors duration-200 cursor-pointer;
+  }
+  .spoiler:not([data-revealed="true"]):hover {
+     @apply bg-foreground/30;
+  }
+  .spoiler[data-revealed="true"] {
+    @apply bg-transparent text-current cursor-text;
+  }
+}
+
+@layer utilities {
+  .animate-highlight {
+    animation: highlight-message 1.5s ease-out forwards;
+  }
+}

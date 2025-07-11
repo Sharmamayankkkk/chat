@@ -87,6 +87,59 @@ const FULL_MESSAGE_SELECT_QUERY = `
     replied_to_message:reply_to_message_id(*, profiles!user_id(*))
 `;
 
+const Spoiler = ({ content }: { content: string }) => {
+    const [revealed, setRevealed] = useState(false);
+    return (
+        <span
+            className="spoiler"
+            data-revealed={revealed}
+            onClick={() => setRevealed(true)}
+            title="Click to reveal"
+        >
+            {content}
+        </span>
+    );
+};
+
+const parseMarkdown = (text: string | null) => {
+    if (!text) return [];
+
+    const elements: (string | React.ReactNode)[] = [];
+    let lastIndex = 0;
+
+    // Combined regex for all markdown patterns
+    const regex = /(\*\*.*?\*\*|__.*?__|~~.*?~~|_.*?_|\`.*?\`|\|\|.*?\|\||https?:\/\/[^\s]+|@[\w\d_]+|:[a-zA-Z0-9_]+:)/g;
+
+    text.replace(regex, (match, content, offset) => {
+        if (offset > lastIndex) {
+            elements.push(text.substring(lastIndex, offset));
+        }
+
+        if (match.startsWith('**') && match.endsWith('**')) {
+            elements.push(<strong key={offset}>{match.slice(2, -2)}</strong>);
+        } else if (match.startsWith('_') && match.endsWith('_')) {
+            elements.push(<em key={offset}>{match.slice(1, -1)}</em>);
+        } else if (match.startsWith('~~') && match.endsWith('~~')) {
+            elements.push(<s key={offset}>{match.slice(2, -2)}</s>);
+        } else if (match.startsWith('`') && match.endsWith('`')) {
+            elements.push(<code key={offset} className="bg-muted text-muted-foreground font-mono text-sm px-1.5 py-1 rounded-md">{match.slice(1, -1)}</code>);
+        } else if (match.startsWith('||') && match.endsWith('||')) {
+            elements.push(<Spoiler key={offset} content={match.slice(2, -2)} />);
+        } else {
+            elements.push(match);
+        }
+
+        lastIndex = offset + match.length;
+        return match;
+    });
+
+    if (lastIndex < text.length) {
+        elements.push(text.substring(lastIndex));
+    }
+
+    return elements;
+};
+
 export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLoadingMore, hasMoreMessages, topMessageSentinelRef, scrollContainerRef, initialUnreadCount = 0 }: ChatProps) {
     const { toast } = useToast();
     const { 
@@ -96,9 +149,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         leaveGroup,
         deleteGroup,
         forwardMessage,
+        reportUser,
         blockUser,
         unblockUser,
-        reportUser,
         blockedUsers,
     } = useAppContext();
     const [message, setMessage] = useState('');
@@ -799,7 +852,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const parseContent = useCallback((content: string | null): (string | React.ReactNode)[] => {
         if (!content) return [];
 
-        const combinedRegex = /(^Forwarded from \*\*.*\*\*)|(@[\w\d_]+)|(:[a-zA-Z0-9_]+:)|(https?:\/\/[^\s]+)/g;
         const elements: (string | React.ReactNode)[] = [];
         let lastIndex = 0;
 
@@ -808,57 +860,75 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             return [name, url];
         }));
 
-        content.replace(combinedRegex, (match, forwarded, mention, emoji, url, offset) => {
-            if (offset > lastIndex) {
-                elements.push(content.substring(lastIndex, offset));
-            }
-            
-            if (forwarded) {
-                 elements.push(
-                    <span key={`forwarded-${offset}`} className="block text-xs italic opacity-80 font-semibold mb-2">
-                        {match.replace(/\*\*/g, '')}
-                    </span>
-                );
-            } else if (mention) {
-                const username = mention.substring(1);
-                const isEveryone = username === 'everyone';
-                const mentionedUser = allUsers?.find(u => u.username === username);
-                if (isEveryone || mentionedUser) {
-                    const isMe = mentionedUser && loggedInUser && mentionedUser.id === loggedInUser.id;
-                    elements.push(
-                        <span key={`mention-${offset}`} className={cn("font-semibold rounded-sm px-1", isMe ? "bg-amber-400/30 text-amber-800 dark:text-amber-200" : "bg-primary/20 text-primary")}>
-                            {match}
+        const combinedRegex = /(^Forwarded from \*\*.*\*\*)|(https?:\/\/[^\s]+)|(@[\w\d_]+)|(:[a-zA-Z0-9_]+:)/g;
+
+        const parsedWithMarkdown = parseMarkdown(content);
+
+        const processNode = (node: string | React.ReactNode): (string | React.ReactNode)[] => {
+            if (typeof node !== 'string') return [node];
+
+            const subElements: (string | React.ReactNode)[] = [];
+            let subLastIndex = 0;
+
+            node.replace(combinedRegex, (match, forwarded, url, mention, emoji, offset) => {
+                 if (offset > subLastIndex) {
+                    subElements.push(node.substring(subLastIndex, offset));
+                }
+
+                if (forwarded) {
+                    subElements.push(
+                        <span key={`forwarded-${offset}`} className="block text-xs italic opacity-80 font-semibold mb-2">
+                            {match.replace(/\*\*/g, '')}
                         </span>
                     );
-                } else {
-                    elements.push(match);
-                }
-            } else if (emoji) {
-                const emojiName = emoji.substring(1, emoji.length - 1);
-                const emojiUrl = emojiMap.get(emojiName);
-                if (emojiUrl) {
-                    elements.push(
-                        <Image key={`emoji-${offset}`} src={emojiUrl} alt={emojiName} width={28} height={28} className="inline-block align-text-bottom mx-0.5" />
+                } else if (mention) {
+                    const username = mention.substring(1);
+                    const isEveryone = username === 'everyone';
+                    const mentionedUser = allUsers?.find(u => u.username === username);
+                    if (isEveryone || mentionedUser) {
+                        const isMe = mentionedUser && loggedInUser && mentionedUser.id === loggedInUser.id;
+                        subElements.push(
+                            <span key={`mention-${offset}`} className={cn("font-semibold rounded-sm px-1", isMe ? "bg-amber-400/30 text-amber-800 dark:text-amber-200" : "bg-primary/20 text-primary")}>
+                                {match}
+                            </span>
+                        );
+                    } else {
+                        subElements.push(match);
+                    }
+                } else if (emoji) {
+                    const emojiName = emoji.substring(1, emoji.length - 1);
+                    const emojiUrl = emojiMap.get(emojiName);
+                    if (emojiUrl) {
+                        subElements.push(
+                            <Image key={`emoji-${offset}`} src={emojiUrl} alt={emojiName} width={28} height={28} className="inline-block align-text-bottom mx-0.5" />
+                        );
+                    } else {
+                        subElements.push(match);
+                    }
+                } else if (url) {
+                    const metadata = { type: 'link_preview', url, name: url, size: 0 };
+                    subElements.push(
+                        <LinkPreview key={`url-${offset}`} metadata={metadata} />
                     );
-                } else {
-                    elements.push(match);
                 }
-            } else if (url) {
-                const metadata = { type: 'link_preview', url, name: url, size: 0 };
-                elements.push(
-                    <LinkPreview key={`url-${offset}`} metadata={metadata} />
-                );
+
+                subLastIndex = offset + match.length;
+                return match;
+            });
+            
+            if (subLastIndex < node.length) {
+                subElements.push(node.substring(subLastIndex));
             }
 
-            lastIndex = offset + match.length;
-            return match;
-        });
-
-        if (lastIndex < content.length) {
-            elements.push(content.substring(lastIndex));
+            return subElements;
         }
 
+        parsedWithMarkdown.forEach(node => {
+            elements.push(...processNode(node));
+        });
+
         return elements;
+
     }, [customEmojiList, allUsers, loggedInUser?.id]);
 
     const renderMessageContent = (message: Message) => {
@@ -1323,7 +1393,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     <div className="flex h-dvh flex-col">
         <ImageViewerDialog open={isImageViewerOpen} onOpenChange={setIsImageViewerOpen} src={imageViewerSrc} />
         {chatPartner && <RequestDmDialog open={isRequestDmOpen} onOpenChange={setIsRequestDmOpen} targetUser={chatPartner} />}
-        {messageToForward && <ForwardMessageDialog messageToForward={messageToForward} onOpenChange={(open) => !open && setMessageToForward(null)} />}
+        {messageToForward && <ForwardMessageDialog open={!!messageToForward} messageToForward={messageToForward} onOpenChange={(open) => !open && setMessageToForward(null)} />}
         {messageInfo && <MessageInfoDialog message={messageInfo} chat={chat} open={!!messageInfo} onOpenChange={() => setMessageInfo(null)} />}
         {chatPartner && <ReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} userToReport={chatPartner} messageToReport={messageToReport} />}
         <PinnedMessagesDialog
