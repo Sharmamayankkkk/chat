@@ -755,9 +755,37 @@ export function ChatInput({
                                 <TabsTrigger value="emoji"><Smile className="mr-2 h-4 w-4" />Emojis</TabsTrigger>
                                 <TabsTrigger value="stickers"><StickyNote className="mr-2 h-4 w-4" />Stickers</TabsTrigger>
                             </TabsList>
-                            <TabsContent value="custom-emoji"><ScrollArea className="h-[350px]">{/* ... */}</ScrollArea></TabsContent>
+                            <TabsContent value="custom-emoji">
+                                <ScrollArea className="h-[350px]">
+                                    <div className="p-2 grid grid-cols-8 gap-2">
+                                        {customEmojiList.map(emojiUrl => (
+                                            <button 
+                                                key={emojiUrl} 
+                                                onClick={() => handleCustomEmojiMessage(emojiUrl)}
+                                                className="aspect-square flex items-center justify-center rounded-md hover:bg-accent"
+                                            >
+                                                <Image src={emojiUrl} alt={emojiUrl.split('/').pop() || ''} width={32} height={32} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                </ScrollArea>
+                            </TabsContent>
                             <TabsContent value="emoji"><EmojiPicker onEmojiClick={handleEmojiClick} height={350} width="100%" defaultSkinTone={SkinTones.NEUTRAL} /></TabsContent>
-                            <TabsContent value="stickers"><ScrollArea className="h-[350px]">{/* ... */}</ScrollArea></TabsContent>
+                            <TabsContent value="stickers">
+                                <ScrollArea className="h-[350px]">
+                                    <div className="p-2 grid grid-cols-3 gap-2">
+                                        {stickerList.map(stickerUrl => (
+                                            <button 
+                                                key={stickerUrl} 
+                                                onClick={() => handleCustomEmojiMessage(stickerUrl)}
+                                                className="aspect-square flex items-center justify-center rounded-md hover:bg-accent"
+                                            >
+                                                <Image src={stickerUrl} alt={stickerUrl.split('/').pop() || ''} width={96} height={96} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                </ScrollArea>
+                            </TabsContent>
                         </Tabs>
                     </PopoverContent>
                 </Popover>
