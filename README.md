@@ -1,68 +1,97 @@
-# Krishna Connect
-*Where Devotees Unite*
+<div align="center">
+  <img src="https://raw.githubusercontent.com/Sharmamayankkkk/krishna-connect/main/public/logo/light_KCS.png#gh-light-mode-only" alt="Krishna Connect Logo" width="150">
+  <img src="https://raw.githubusercontent.com/Sharmamayankkkk/krishna-connect/main/public/logo/dark_KCS.png#gh-dark-mode-only" alt="Krishna Connect Logo" width="150">
 
-In the spirit of selfless service and shared wisdom, Krishna Connect offers a sacred digital space for our community to come together. It's more than just a chat app; it's a platform for fostering satsang, sharing inspiration, and strengthening our connection to Krishna and to each other.
+  <h1 align="center">Krishna Connect</h1>
 
-Built with modern technology, Krishna Connect provides a secure, intuitive, and beautiful environment for meaningful conversations and community growth.
+  <p align="center">
+    <i>Where Devotees Unite</i>
+    <br />
+    A modern, real-time chat application for the conscious community.
+    <br />
+    <a href="https://github.com/Sharmamayankkkk/krishna-connect/issues">Report Bug</a>
+    ·
+    <a href="https://github.com/Sharmamayankkkk/krishna-connect/issues">Request Feature</a>
+  </p>
+</div>
 
 ---
 
+## About The Project
+
+In the spirit of selfless service (*seva*) and shared wisdom (*satsang*), Krishna Connect offers a sacred digital space for our community to come together. It's more than just a chat app; it's a platform designed to foster deep connections, share spiritual inspiration, and strengthen our collective journey in Krishna consciousness.
+
+Built with modern, scalable, and beautiful technology, Krishna Connect provides a secure, intuitive, and feature-rich environment for meaningful conversations and community growth.
+
 ## ✨ Features for a Conscious Community
 
-### Satsang in Real-Time
-- **One-on-One & Group Chats**: Engage in instantaneous, meaningful conversations with fellow devotees.
-- **Community Circles & Channels**: Create and manage public or private groups for focused discussions, study circles, or event coordination. Admins can control history visibility and generate invite links.
+Krishna Connect is packed with features designed to create a vibrant and engaging community experience.
 
-### Share Inspirations
-- **Rich Media**: Effortlessly share photos, important documents, and audio files with previews and download links.
+### Real-Time Communication
+- **One-on-One & Group Chats**: Engage in instantaneous, meaningful conversations.
+- **Community Circles (Channels)**: Create and manage public or private groups for focused discussions, study circles, or event coordination.
+- **Admin Controls**: Group admins can control chat history visibility for new members and generate secure invite links.
+- **Typing Indicators**: See when others are typing in real-time.
+- **Online Status**: Know who is currently online.
+
+### Rich & Expressive Messaging
+- **Rich Media Sharing**: Effortlessly share photos, important documents, and audio files with previews and direct download links.
 - **Voice Notes**: Record and send heartfelt voice messages directly within the chat.
-
-### Expressive & Mindful Communication
-- **Reactions & Replies**: Share your sentiments on messages with emojis, and reply directly to specific messages to keep conversations clear.
-- **Pin & Star Messages**: Keep track of important verses, links, or inspiring words.
+- **Text Formatting**: Emphasize your messages with **bold**, _italics_, `code`, ~~strikethrough~~, and `||spoiler||` tags.
+- **Reactions & Replies**: Share your sentiments on messages with emojis, and reply directly to specific messages to keep conversations clear and organized.
+- **@Mentions**: Bring specific devotees into a conversation in group chats with `@username` or notify everyone with `@everyone`.
+- **Link Previews**: Automatic, beautiful previews for shared links.
 - **Edit & Delete**: Communicate mindfully with the ability to edit or delete your messages.
 - **Forwarding**: Easily share messages with other devotees or groups.
-- **@Mentions**: Bring specific devotees into a conversation in group chats.
+- **Full Emoji & Sticker Support**: Express yourself with a full emoji picker, custom server-side emojis, and beautiful stickers.
 
-### A Space That Feels Like Home
-- **Personalize Your Sanctuary**: Customize your chat experience with beautiful themes, bubble colors, and a selection of inspiring wallpapers.
-- **Express Yourself Freely**: Utilize a full emoji picker, custom server-side emojis, and beautiful stickers.
+### Personalization & User Experience
+- **Customizable Themes**: Personalize your chat experience with beautiful themes, bubble colors, and a selection of inspiring wallpapers. Adjust wallpaper brightness for perfect visibility.
 - **Light & Dark Mode**: Switch between themes for your comfort, day or night.
-- **Desktop Notifications**: Stay connected and never miss an important message.
+- **Desktop Notifications**: Stay connected and never miss an important message, with smart notifications that don't fire if you're already in the chat.
+- **Image Viewer**: A beautiful, fullscreen image viewer with controls for zoom, rotation, and download.
+- **Message Info**: See who has read your message in group chats.
 
-### Community Gatherings & Events
+### Community & Events
 - **Events System**: Create, share, and RSVP to community events, from online lectures to local meetups.
-- **Devotee Profiles**: Learn more about fellow community members and see your shared groups.
+- **Devotee Profiles**: Learn more about fellow community members, view their bio, and see your shared groups.
+- **Starred Messages**: Keep track of important verses, links, or inspiring words by starring them for easy access later.
+- **Pinned Messages**: Pin important announcements or messages to the top of any chat for everyone to see.
 
 ### A Safe & Sacred Space
 - **Secure Authentication**: Full email/password and OAuth (Google, Facebook) sign-in.
-- **Protected DMs**: A moderated system for cross-gender communication, requiring admin approval to foster a safe environment.
-- **User Blocking**: Maintain your peace of mind by blocking users if needed.
+- **Protected DMs**: A moderated system for cross-gender communication requires admin approval to foster a safe and respectful environment.
+- **User Blocking & Reporting**: Maintain your peace of mind by blocking users if needed, and report any inappropriate behavior to admins.
 - **Admin Seva Panel**: A dedicated dashboard for community sevaks (admins) to manage users, review DM requests, and resolve reports.
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Framework**: Next.js (App Router)
-- **UI**: React, ShadCN UI, Tailwind CSS
-- **Backend & Database**: Supabase (PostgreSQL, Auth, Storage, Realtime)
-- **Deployment**: Vercel
+This project is built with a modern, robust, and scalable tech stack:
+
+- **Framework**: [Next.js](https://nextjs.org/) (App Router)
+- **UI Library**: [React](https://react.dev/)
+- **UI Components**: [ShadCN UI](https://ui.shadcn.com/)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+- **Backend & Database**: [Supabase](https://supabase.com/) (PostgreSQL, Auth, Storage, Realtime)
+- **Deployment**: [Vercel](https://vercel.com/)
 
 ---
 
 ## 🚀 Getting Started
 
-Follow these steps to get a local copy up and running for development or contribution.
+Follow these steps to get a local copy up and running for development and contribution.
 
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) (v18 or later recommended)
 - A [Supabase](https://supabase.com/) account.
-- [Vercel CLI](https://vercel.com/docs/cli) (for deployment)
+- [Vercel CLI](https://vercel.com/docs/cli) (optional, for deployment)
 
 ### 1. Clone the Repository
 
+First, clone the repository to your local machine:
 ```bash
 git clone https://github.com/Sharmamayankkkk/krishna-connect.git
 cd krishna-connect
@@ -70,19 +99,20 @@ cd krishna-connect
 
 ### 2. Set Up Supabase
 
-1.  **Create a Supabase Project**: Go to [supabase.com](https://supabase.com), create a new project, and save your **Project URL** and `public` **anon key**.
-2.  **Database Schema**: Go to the **SQL Editor** in your Supabase project dashboard and run the SQL from `supabase/schema.sql` to set up your database tables and policies.
-3.  **Clean Database (Optional)**: To start with a clean slate, run the script in `supabase/reset.sql` in the SQL Editor.
+1.  **Create a Supabase Project**: Go to [supabase.com](https://supabase.com), create a new project, and save your **Project URL** and `public` **anon key**. You'll find these in your project's *Settings > API*.
+2.  **Database Schema**: Go to the **SQL Editor** in your Supabase project dashboard. Copy the entire contents of `supabase/schema.sql` from this repository and run it to set up your database tables, policies, and functions.
+3.  **Clean Database (Optional)**: To start with a clean slate at any time, you can run the script in `supabase/reset.sql` in the SQL Editor. **Warning: This will delete all data.**
+4.  **Enable OAuth Providers (Optional)**: If you want to use Google or Facebook login, you'll need to enable them in *Authentication > Providers* in your Supabase dashboard and add your OAuth credentials.
 
 ### 3. Set Up Environment Variables
 
-Create a file named `.env.local` in the root of your project and add your Supabase credentials. You can copy the example file:
+Create a file named `.env.local` in the root of your project. You can copy the example file:
 
 ```bash
 cp .env.example .env.local
 ```
 
-Then, fill in the values in `.env.local`:
+Then, fill in the values in `.env.local` with the credentials from your Supabase project:
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=YOUR_SUPABASE_PROJECT_URL
@@ -91,12 +121,19 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
 
 ### 4. Install Dependencies and Run
 
+Install the project dependencies using npm:
+
 ```bash
 npm install
+```
+
+Now, run the development server:
+
+```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result. You're all set to start developing!
 
 ---
 
@@ -106,7 +143,26 @@ This project is optimized for deployment on [Vercel](https://vercel.com).
 
 1.  **Push to GitHub**: Make sure your code is pushed to a GitHub repository.
 2.  **Import Project on Vercel**: Import your repository into Vercel. It will automatically detect that you are using Next.js and configure the build settings.
-3.  **Add Environment Variables**: In your Vercel project settings, add the `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` environment variables.
-4.  **Deploy**: Vercel will build and deploy your application. Any push to the main branch will trigger a new deployment.
+3.  **Add Environment Variables**: In your Vercel project settings (*Settings > Environment Variables*), add the `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` variables with the same values from your `.env.local` file.
+4.  **Deploy**: Vercel will build and deploy your application. Any push to the main branch will automatically trigger a new deployment.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSharmamayankkkk%2Fkrishna-connect&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSharmamayankkkk%2Fkrishna-connect&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY&project-name=krishna-connect&repo-name=krishna-connect)
+
+---
+
+## 🤝 Contributing
+
+Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+
+Please see our [**Contributing Guidelines**](https://github.com/Sharmamayankkkk/krishna-connect/blob/main/CONTRIBUTING.md) for more details on how to get started.
+
+## 📜 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
+
+## 🙏 Acknowledgements
+
+- [ShadCN UI](https://ui.shadcn.com/) for the fantastic component library.
+- [Supabase](https://supabase.com/) for their incredible backend-as-a-service platform.
+- [Vercel](https://vercel.com/) for making deployment seamless.
+- All the devotees and well-wishers who inspire this project.
