@@ -49,8 +49,6 @@ import { LinkPreview } from './link-preview';
 import { Icons } from "@/components/icons";
 import { ImageViewerDialog } from './image-viewer';
 import { MessageInfoDialog } from './message-info-dialog';
-import { Textarea } from '@/components/ui/textarea';
-
 
 interface ChatProps {
   chat: Chat;
@@ -149,7 +147,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         dmRequests, 
         leaveGroup,
         deleteGroup,
-        forwardMessage,
+        sendDmRequest,
         reportUser,
         blockUser,
         unblockUser,
@@ -737,44 +735,10 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
       setSelection({ start, end });
   
       const getCaretCoordinates = (element: any, position: number) => {
-        const debug = false;
-        const 'selectionStart' = position;
-        const 'selectionEnd' = position;
-        const properties = [
-            'direction',
-            'boxSizing',
-            'width',
-            'height',
-            'overflowX',
-            'overflowY',
-            'borderTopWidth',
-            'borderRightWidth',
-            'borderBottomWidth',
-            'borderLeftWidth',
-            'paddingTop',
-            'paddingRight',
-            'paddingBottom',
-            'paddingLeft',
-            'fontStyle',
-            'fontVariant',
-            'fontWeight',
-            'fontStretch',
-            'fontSize',
-            'fontSizeAdjust',
-            'lineHeight',
-            'fontFamily',
-            'textAlign',
-            'textTransform',
-            'textIndent',
-            'textDecoration',
-            'letterSpacing',
-            'wordSpacing',
-            'tabSize',
-            'MozTabSize',
-        ];
-
         const isBrowser = typeof window !== 'undefined';
-        const isFirefox = isBrowser && (window as any).mozInnerScreenX != null;
+        if (!isBrowser) {
+          return { top: 0, left: 0, height: 0 };
+        }
     
         const div = document.createElement('div');
         div.id = 'input-textarea-caret-position-mirror-div';
@@ -782,27 +746,29 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     
         const style = div.style;
         const computed = window.getComputedStyle(element);
-    
-        style.whiteSpace = 'pre-wrap';
-        style.wordWrap = 'break-word';
-        style.position = 'absolute';
-        if (!debug) style.visibility = 'hidden';
-    
+        const properties = [
+            'direction', 'boxSizing', 'width', 'height', 'overflowX', 'overflowY',
+            'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+            'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+            'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize',
+            'fontSizeAdjust', 'lineHeight', 'fontFamily', 'textAlign', 'textTransform',
+            'textIndent', 'textDecoration', 'letterSpacing', 'wordSpacing', 'tabSize',
+            'MozTabSize'
+        ];
+        
         properties.forEach(prop => {
             style[prop as any] = computed[prop as any];
         });
     
-        if (isFirefox) {
-            if (element.scrollHeight > parseInt(computed.height))
-                style.overflowY = 'scroll';
-        } else {
-            style.overflow = 'hidden';
-        }
+        style.whiteSpace = 'pre-wrap';
+        style.wordWrap = 'break-word';
+        style.position = 'absolute'; 
+        style.visibility = 'hidden'; 
     
         div.textContent = element.value.substring(0, position);
     
         const span = document.createElement('span');
-        span.textContent = element.value.substring(position) || '.';
+        span.textContent = element.value.substring(position) || '.'; 
         div.appendChild(span);
     
         const coordinates = {
@@ -810,22 +776,19 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             left: span.offsetLeft + parseInt(computed.borderLeftWidth),
             height: parseInt(computed.lineHeight)
         };
-    
-        if (debug) {
-            span.style.backgroundColor = '#aaa';
-        } else {
-            document.body.removeChild(div);
-        }
-    
+        
+        document.body.removeChild(div);
         return coordinates;
       };
   
       const rect = textarea.getBoundingClientRect();
       const caretPos = getCaretCoordinates(textarea, start);
       
+      const toolbarHeight = toolbarRef.current?.offsetHeight || 40; // Approx height
+
       setToolbarPosition({
-        top: rect.top + caretPos.top - caretPos.height - 10,
-        left: rect.left + caretPos.left,
+        top: rect.top + window.scrollY + caretPos.top - toolbarHeight - 5,
+        left: rect.left + window.scrollX + caretPos.left,
       });
     };
 
@@ -901,6 +864,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 e.preventDefault();
                 setMentionQuery(null);
             }
+        } else if (e.key === 'Enter' && !e.shiftKey) {
+             e.preventDefault();
+             if(message.trim()) handleSendMessage({ content: message });
         }
     };
     
@@ -1408,7 +1374,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
           >
               {isEditing ? (
                   <div className="w-full">
-                      <Textarea
+                      <TextareaAutosize
                           value={editingMessage.content}
                           onChange={(e) => setEditingMessage({ ...editingMessage, content: e.target.value })}
                           className="w-full resize-none bg-background text-foreground"
@@ -1450,32 +1416,13 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                       "absolute -top-4 flex items-center gap-1 opacity-0 group-hover/bubble:opacity-100 transition-opacity",
                       isMyMessage ? "left-[-8px]" : "right-[-8px]"
                   )}>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background" onClick={() => handleStartReply(message)} disabled={isOptimistic}>
-                          <Reply className="h-4 w-4" />
-                        </Button>
-                       <Popover>
+                        <Popover>
                           <PopoverTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background" disabled={isOptimistic}>
-                                  <SmilePlus className="h-4 w-4" />
-                              </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0 border-none">
-                              <EmojiPicker 
-                                onEmojiClick={(emojiData) => onReact(emojiData, message)} 
-                                customEmojis={reactionPickerCustomEmojis}
-                                onCustomEmojiClick={(emojiData) => onCustomReact(emojiData.id, message)}
-                                defaultSkinTone={SkinTones.NEUTRAL}
-                                getEmojiUrl={(unified, style) => `https://cdn.jsdelivr.net/npm/emoji-datasource-apple/img/${style}/64/${unified}.png`}
-                              />
-                          </PopoverContent>
-                      </Popover>
-                      <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background">
                                   <MoreVertical className="h-4 w-4" />
                               </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-1">
                               <DropdownMenuItem onClick={() => handleStartReply(message)} disabled={isOptimistic}>
                                 <Reply className="mr-2 h-4 w-4" />
                                 <span>Reply</span>
@@ -1525,8 +1472,27 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                                   </DropdownMenuItem>
                               </>
                               )}
-                          </DropdownMenuContent>
-                      </DropdownMenu>
+                          </PopoverContent>
+                      </Popover>
+                       <Popover>
+                          <PopoverTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background" disabled={isOptimistic}>
+                                  <SmilePlus className="h-4 w-4" />
+                              </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0 border-none">
+                              <EmojiPicker 
+                                onEmojiClick={(emojiData) => onReact(emojiData, message)} 
+                                customEmojis={reactionPickerCustomEmojis}
+                                onCustomEmojiClick={(emojiData) => onCustomReact(emojiData.id, message)}
+                                defaultSkinTone={SkinTones.NEUTRAL}
+                                getEmojiUrl={(unified, style) => `https://cdn.jsdelivr.net/npm/emoji-datasource-apple/img/${style}/64/${unified}.png`}
+                              />
+                          </PopoverContent>
+                      </Popover>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 hover:bg-background" onClick={() => handleStartReply(message)} disabled={isOptimistic}>
+                          <Reply className="h-4 w-4" />
+                      </Button>
                   </div>
               )}
               {renderReactions(message)}
@@ -1546,7 +1512,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     <div className="flex h-dvh flex-col">
         <ImageViewerDialog open={isImageViewerOpen} onOpenChange={setIsImageViewerOpen} src={imageViewerSrc} />
         {chatPartner && <RequestDmDialog open={isRequestDmOpen} onOpenChange={setIsRequestDmOpen} targetUser={chatPartner} />}
-        {messageToForward && <ForwardMessageDialog open={!!messageToForward} messageToForward={messageToForward} onOpenChange={(open) => !open && setMessageToForward(null)} />}
+        {messageToForward && <ForwardMessageDialog open={!!messageToForward} onOpenChange={(open) => !open && setMessageToForward(null)} message={messageToForward} />}
         {messageInfo && <MessageInfoDialog message={messageInfo} chat={chat} open={!!messageInfo} onOpenChange={() => setMessageInfo(null)} />}
         {chatPartner && <ReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} userToReport={chatPartner} messageToReport={messageToReport} />}
         <PinnedMessagesDialog
@@ -1585,7 +1551,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                             </div>
                         ) : null}
                     </div>
-                    <Textarea
+                    <TextareaAutosize
                         placeholder="Add a caption..."
                         value={caption}
                         onChange={(e) => setCaption(e.target.value)}
@@ -1798,7 +1764,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 </div>
             )}
             <div className="relative">
-               {toolbarPosition && (
+               {toolbarPosition && selection && (
                     <div
                         ref={toolbarRef}
                         className="fixed z-10 bg-background border rounded-md shadow-lg p-1 flex gap-1"
@@ -1807,11 +1773,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                             left: toolbarPosition.left,
                             transform: 'translateX(-50%)',
                         }}
+                        onMouseDown={(e) => e.preventDefault()}
                     >
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormatting('bold')}><Bold className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormatting('italic')}><Italic className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormatting('strikethrough')}><Strikethrough className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormatting('code')}><Code className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormatting('bold')}><Bold className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormatting('italic')}><Italic className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormatting('strikethrough')}><Strikethrough className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormatting('code')}><Code className="h-4 w-4" /></Button>
                     </div>
                 )}
                {mentionQuery !== null && (
@@ -1853,15 +1820,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 rows={1}
                 value={message}
                 onChange={handleMessageChange}
-                onKeyDown={(e) => {
-                  handleKeyDown(e);
-                  if (e.key === 'Enter' && !e.shiftKey && !/Mobi|Android/i.test(navigator.userAgent)) {
-                    e.preventDefault();
-                    if(message.trim()) handleSendMessage({ content: message });
-                  }
-                }}
-                onSelect={(e: any) => handleTextSelection(e)}
-                onBlur={() => { setTimeout(() => { setSelection(null); setToolbarPosition(null); }, 150); }}
+                onKeyDown={handleKeyDown}
+                onSelect={handleTextSelection}
+                onBlur={() => { setTimeout(() => { if (!toolbarRef.current?.contains(document.activeElement)) { setSelection(null); setToolbarPosition(null); } }, 150); }}
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
                 <Popover open={isEmojiOpen} onOpenChange={setIsEmojiOpen}>
