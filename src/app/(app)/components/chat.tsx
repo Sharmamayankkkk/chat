@@ -17,7 +17,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import TextareaAutosize from 'react-textarea-autosize';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Chat, User, Message, AttachmentMetadata } from '@/lib/types';
 import { cn, getContrastingTextColor, createClient } from '@/lib/utils';
@@ -49,6 +49,8 @@ import { LinkPreview } from './link-preview';
 import { Icons } from "@/components/icons";
 import { ImageViewerDialog } from './image-viewer';
 import { MessageInfoDialog } from './message-info-dialog';
+import { Textarea } from '@/components/ui/textarea';
+
 
 interface ChatProps {
   chat: Chat;
@@ -721,27 +723,110 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         }
     };
     
-    const handleTextSelection = () => {
-        setTimeout(() => {
-            const textarea = textareaRef.current;
-            if (!textarea) return;
+    const handleTextSelection = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+      const textarea = e.currentTarget;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+  
+      if (start === end) {
+        setSelection(null);
+        setToolbarPosition(null);
+        return;
+      }
+  
+      setSelection({ start, end });
+  
+      const getCaretCoordinates = (element: any, position: number) => {
+        const debug = false;
+        const 'selectionStart' = position;
+        const 'selectionEnd' = position;
+        const properties = [
+            'direction',
+            'boxSizing',
+            'width',
+            'height',
+            'overflowX',
+            'overflowY',
+            'borderTopWidth',
+            'borderRightWidth',
+            'borderBottomWidth',
+            'borderLeftWidth',
+            'paddingTop',
+            'paddingRight',
+            'paddingBottom',
+            'paddingLeft',
+            'fontStyle',
+            'fontVariant',
+            'fontWeight',
+            'fontStretch',
+            'fontSize',
+            'fontSizeAdjust',
+            'lineHeight',
+            'fontFamily',
+            'textAlign',
+            'textTransform',
+            'textIndent',
+            'textDecoration',
+            'letterSpacing',
+            'wordSpacing',
+            'tabSize',
+            'MozTabSize',
+        ];
 
-            const start = textarea.selectionStart;
-            const end = textarea.selectionEnd;
-
-            if (start !== end) {
-                setSelection({ start, end });
-                const rect = textarea.getBoundingClientRect();
-                const toolbarHeight = 40;
-                setToolbarPosition({
-                    top: rect.top - toolbarHeight - 5,
-                    left: rect.left + (rect.width / 2),
-                });
-            } else {
-                setSelection(null);
-                setToolbarPosition(null);
-            }
-        }, 0);
+        const isBrowser = typeof window !== 'undefined';
+        const isFirefox = isBrowser && (window as any).mozInnerScreenX != null;
+    
+        const div = document.createElement('div');
+        div.id = 'input-textarea-caret-position-mirror-div';
+        document.body.appendChild(div);
+    
+        const style = div.style;
+        const computed = window.getComputedStyle(element);
+    
+        style.whiteSpace = 'pre-wrap';
+        style.wordWrap = 'break-word';
+        style.position = 'absolute';
+        if (!debug) style.visibility = 'hidden';
+    
+        properties.forEach(prop => {
+            style[prop as any] = computed[prop as any];
+        });
+    
+        if (isFirefox) {
+            if (element.scrollHeight > parseInt(computed.height))
+                style.overflowY = 'scroll';
+        } else {
+            style.overflow = 'hidden';
+        }
+    
+        div.textContent = element.value.substring(0, position);
+    
+        const span = document.createElement('span');
+        span.textContent = element.value.substring(position) || '.';
+        div.appendChild(span);
+    
+        const coordinates = {
+            top: span.offsetTop + parseInt(computed.borderTopWidth),
+            left: span.offsetLeft + parseInt(computed.borderLeftWidth),
+            height: parseInt(computed.lineHeight)
+        };
+    
+        if (debug) {
+            span.style.backgroundColor = '#aaa';
+        } else {
+            document.body.removeChild(div);
+        }
+    
+        return coordinates;
+      };
+  
+      const rect = textarea.getBoundingClientRect();
+      const caretPos = getCaretCoordinates(textarea, start);
+      
+      setToolbarPosition({
+        top: rect.top + caretPos.top - caretPos.height - 10,
+        left: rect.left + caretPos.left,
+      });
     };
 
     const applyFormatting = (format: 'bold' | 'italic' | 'strikethrough' | 'code') => {
@@ -1716,7 +1801,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                {toolbarPosition && (
                     <div
                         ref={toolbarRef}
-                        className="absolute z-10 bg-background border rounded-md shadow-lg p-1 flex gap-1"
+                        className="fixed z-10 bg-background border rounded-md shadow-lg p-1 flex gap-1"
                         style={{
                             top: toolbarPosition.top,
                             left: toolbarPosition.left,
@@ -1761,15 +1846,21 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                         </ScrollArea>
                     </Card>
                 )}
-              <Textarea
+              <TextareaAutosize
                 ref={textareaRef}
                 placeholder={isGroup ? "Type @ to mention users..." : "Type a message..."}
-                className={cn("pr-28 resize-none min-h-[40px]", replyingTo && "rounded-t-none")}
+                className={cn("pr-28 min-h-[40px] max-h-40 resize-none", replyingTo && "rounded-t-none")}
                 rows={1}
                 value={message}
                 onChange={handleMessageChange}
-                onKeyDown={handleKeyDown}
-                onSelect={handleTextSelection}
+                onKeyDown={(e) => {
+                  handleKeyDown(e);
+                  if (e.key === 'Enter' && !e.shiftKey && !/Mobi|Android/i.test(navigator.userAgent)) {
+                    e.preventDefault();
+                    if(message.trim()) handleSendMessage({ content: message });
+                  }
+                }}
+                onSelect={(e: any) => handleTextSelection(e)}
                 onBlur={() => { setTimeout(() => { setSelection(null); setToolbarPosition(null); }, 150); }}
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
