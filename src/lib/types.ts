@@ -142,7 +142,8 @@ export type Event = {
   meet_link?: string;
   rsvps: EventRSVP[];
   profiles?: User; // Joined creator profile
-  is_deleted?: boolean;
+  status: 'active' | 'cancelled' | 'completed';
+  is_deleted: boolean;
 };
 
 export interface AppContextType {

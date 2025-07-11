@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ShareEventDialog } from './share-event-dialog';
 import { createClient } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 export function EventCard({ event, onRsvp }: { event: Event, onRsvp: () => void }) {
     const { loggedInUser, allUsers } = useAppContext();
@@ -65,6 +66,7 @@ export function EventCard({ event, onRsvp }: { event: Event, onRsvp: () => void 
     
     const userRsvp = event.rsvps?.find(rsvp => rsvp.user_id === loggedInUser?.id);
     const isPastEvent = new Date(event.date_time) < new Date();
+    const isCancelled = event.status === 'cancelled';
     const goingCount = event.rsvps?.filter(r => r.status === 'going').length || 0;
     const interestedCount = event.rsvps?.filter(r => r.status === 'interested').length || 0;
 
@@ -85,15 +87,21 @@ export function EventCard({ event, onRsvp }: { event: Event, onRsvp: () => void 
                         src={event.thumbnail || 'https://placehold.co/600x400.png'}
                         alt={event.title}
                         fill
-                        className="object-cover"
+                        className={cn("object-cover", isCancelled && "grayscale")}
                         data-ai-hint="event"
                     />
-                    {isPastEvent && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><Badge variant="destructive">Past Event</Badge></div>}
+                    {(isPastEvent || isCancelled) && 
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                            <Badge variant="destructive" className="text-base">
+                                {isCancelled ? 'Cancelled' : 'Past Event'}
+                            </Badge>
+                        </div>
+                    }
                 </div>
             </Link>
             <CardHeader>
                 <Link href={`/events/${event.id}`} className="hover:underline">
-                    <CardTitle className="line-clamp-2">{event.title}</CardTitle>
+                    <CardTitle className={cn("line-clamp-2", isCancelled && "text-muted-foreground")}>{event.title}</CardTitle>
                 </Link>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground pt-2">
                     <div className="flex items-center gap-1.5">
@@ -132,7 +140,7 @@ export function EventCard({ event, onRsvp }: { event: Event, onRsvp: () => void 
                 </div>
             </CardContent>
             <CardFooter className="flex flex-col items-stretch gap-2 !p-4 border-t">
-                {loggedInUser && !isPastEvent && (
+                {loggedInUser && !isPastEvent && !isCancelled && (
                     <div className="grid grid-cols-3 gap-2">
                         <Button variant={userRsvp?.status === 'going' ? 'success' : 'outline'} size="sm" onClick={() => handleRsvp('going')}>
                             <Check className="mr-1.5 h-4 w-4" /> Going
@@ -159,7 +167,7 @@ export function EventCard({ event, onRsvp }: { event: Event, onRsvp: () => void 
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </div>
-                 {event.meet_link && !isPastEvent && (
+                 {event.meet_link && !isPastEvent && !isCancelled && (
                     <a href={event.meet_link} target="_blank" rel="noopener noreferrer" className="w-full">
                         <Button className="w-full">
                             <LinkIcon className="mr-1.5 h-4 w-4" /> Join Meet

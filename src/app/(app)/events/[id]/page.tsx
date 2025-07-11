@@ -5,7 +5,7 @@ import React from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
-import { ArrowLeft, Calendar, Check, Clock, Link as LinkIcon, Share2, Star, Users, X } from 'lucide-react';
+import { ArrowLeft, Calendar, Check, Clock, Link as LinkIcon, Share2, Star, Users, X, Edit, MoreVertical, Trash2, XCircle } from 'lucide-react';
 import { useAppContext } from '@/providers/app-provider';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -18,6 +18,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { CreateEventDialog } from '../components/create-event-dialog';
 import { ShareEventDialog } from '../components/share-event-dialog';
 import { createClient } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 function EventDetailsLoader() {
     return (
@@ -46,7 +49,7 @@ export default function EventDetailsPage() {
     const router = useRouter();
     const supabase = createClient();
     const { toast } = useToast();
-    const { loggedInUser, allUsers } = useAppContext();
+    const { loggedInUser } = useAppContext();
     
     const [event, setEvent] = React.useState<Event | null>(null);
     const [isLoading, setIsLoading] = React.useState(true);
@@ -59,6 +62,7 @@ export default function EventDetailsPage() {
             .from('events')
             .select('*, rsvps:event_rsvps(*, profiles!user_id(*)), profiles:creator_id(*)')
             .eq('id', params.id)
+            .eq('is_deleted', false)
             .single();
 
         if (error || !data) {
@@ -73,11 +77,32 @@ export default function EventDetailsPage() {
     React.useEffect(() => {
         fetchEvent();
     }, [fetchEvent]);
+
+    const handleUpdateStatus = async (status: 'cancelled' | 'active') => {
+        const { error } = await supabase.from('events').update({ status }).eq('id', event!.id);
+        if (error) {
+            toast({ variant: 'destructive', title: 'Error updating event', description: error.message });
+        } else {
+            toast({ title: `Event ${status}` });
+            fetchEvent();
+        }
+    };
+
+    const handleDeleteEvent = async () => {
+        const { error } = await supabase.from('events').update({ is_deleted: true }).eq('id', event!.id);
+         if (error) {
+            toast({ variant: 'destructive', title: 'Error deleting event', description: error.message });
+        } else {
+            toast({ title: "Event Deleted", description: "The event has been removed." });
+            router.push('/events');
+        }
+    }
     
     if (isLoading) return <EventDetailsLoader />;
     if (!event) notFound();
 
     const isPastEvent = new Date(event.date_time) < new Date();
+    const isCancelled = event.status === 'cancelled';
     const userRsvp = event.rsvps?.find(rsvp => rsvp.user_id === loggedInUser?.id);
     const isAdmin = loggedInUser?.is_admin || loggedInUser?.id === event.creator_id;
     
@@ -116,8 +141,71 @@ export default function EventDetailsPage() {
                             <span className="sr-only">Back</span>
                         </Button>
                         <h2 className="text-3xl font-bold tracking-tight">{event.title}</h2>
+                        {isCancelled && <Badge variant="destructive" className="text-lg">Cancelled</Badge>}
                     </div>
-                    {isAdmin && <Button variant="outline" onClick={() => setIsEditOpen(true)}>Edit Event</Button>}
+                     {isAdmin && (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="icon">
+                                    <MoreVertical className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => setIsEditOpen(true)}>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    <span>Edit Event</span>
+                                </DropdownMenuItem>
+                                 <DropdownMenuSeparator />
+                                {isCancelled ? (
+                                    <DropdownMenuItem onClick={() => handleUpdateStatus('active')}>
+                                        <Check className="mr-2 h-4 w-4" />
+                                        <span>Re-activate Event</span>
+                                    </DropdownMenuItem>
+                                ) : (
+                                    <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                                                <XCircle className="mr-2 h-4 w-4" />
+                                                <span>Cancel Event</span>
+                                            </DropdownMenuItem>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>Cancel this event?</AlertDialogTitle>
+                                                <AlertDialogDescription>
+                                                    This will mark the event as cancelled, but it will remain visible.
+                                                </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>Close</AlertDialogCancel>
+                                                <AlertDialogAction onClick={() => handleUpdateStatus('cancelled')}>Confirm Cancel</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
+                                )}
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <DropdownMenuItem className="text-destructive" onSelect={(e) => e.preventDefault()}>
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            <span>Delete Event</span>
+                                        </DropdownMenuItem>
+                                    </AlertDialogTrigger>
+                                     <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Delete this event?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                This is a permanent action and cannot be undone. The event will be removed for everyone.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={handleDeleteEvent} className="bg-destructive hover:bg-destructive/90">Confirm Delete</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
                 </div>
                 
                 <div className="grid gap-8 md:grid-cols-3">
@@ -125,6 +213,7 @@ export default function EventDetailsPage() {
                         <Card className="overflow-hidden">
                             <div className="relative aspect-video">
                                 <Image src={event.thumbnail || "https://placehold.co/600x400.png"} alt={event.title} fill className="object-cover" data-ai-hint="event" />
+                                {isCancelled && <div className="absolute inset-0 bg-black/60" />}
                             </div>
                         </Card>
 
@@ -160,7 +249,7 @@ export default function EventDetailsPage() {
                                     </div>
                                 )}
                             </CardContent>
-                             {!isPastEvent && (
+                             {!isPastEvent && !isCancelled && (
                                 <CardFooter className="flex-col items-stretch gap-2">
                                     <div className="grid grid-cols-3 gap-2">
                                         <Button variant={userRsvp?.status === 'going' ? 'success' : 'outline'} size="sm" onClick={() => handleRsvp('going')}><Check className="mr-1.5 h-4 w-4" /> Going</Button>

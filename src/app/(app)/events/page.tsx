@@ -52,6 +52,7 @@ export default function EventsPage() {
         const { data, error } = await supabase
             .from("events")
             .select("*, rsvps:event_rsvps(*), profiles:creator_id(*)")
+            .eq('is_deleted', false) // Do not fetch soft-deleted events
             .order('date_time', { ascending: false });
 
         if (error) {
@@ -88,7 +89,7 @@ export default function EventsPage() {
 
     return (
         <>
-            {loggedInUser?.is_admin && <CreateEventDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} onEventCreated={fetchEvents} onEventUpdated={() => {}} />}
+            {loggedInUser?.is_admin && <CreateEventDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} onEventCreated={fetchEvents} onEventUpdated={fetchEvents} />}
             <div className="flex-1 space-y-8 p-4 md:p-8 pt-6">
                 <div className="flex items-center justify-between space-y-2">
                     <h2 className="text-3xl font-bold tracking-tight">Events</h2>

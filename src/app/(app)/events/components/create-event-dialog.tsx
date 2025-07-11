@@ -59,7 +59,7 @@ export function CreateEventDialog({ open, onOpenChange, eventToEdit, onEventCrea
     defaultValues: isEditing ? {
       title: eventToEdit.title,
       description: eventToEdit.description || '',
-      meet_link: eventToEdit.meet_link,
+      meet_link: eventToEdit.meet_link || '',
       date: new Date(eventToEdit.date_time),
       time: format(new Date(eventToEdit.date_time), "HH:mm"),
     } : {
@@ -75,7 +75,7 @@ export function CreateEventDialog({ open, onOpenChange, eventToEdit, onEventCrea
       form.reset(isEditing ? {
         title: eventToEdit.title,
         description: eventToEdit.description || '',
-        meet_link: eventToEdit.meet_link,
+        meet_link: eventToEdit.meet_link || '',
         date: new Date(eventToEdit.date_time),
         time: format(new Date(eventToEdit.date_time), "HH:mm"),
       } : {
@@ -137,6 +137,8 @@ export function CreateEventDialog({ open, onOpenChange, eventToEdit, onEventCrea
           thumbnail: thumbnailUrl,
           meet_link: values.meet_link,
           date_time: combinedDateTime.toISOString(),
+          status: 'active', // Set initial status
+          is_deleted: false
         });
         if (error) throw error;
         toast({ title: "Event Created!", description: `The event "${values.title}" has been scheduled.` });
