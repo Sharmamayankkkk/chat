@@ -339,22 +339,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const forwardMessage = useCallback(async (message: Message, chatIds: number[]) => {
     if (!loggedInUser) return
+
     const originalSender = allUsers.find(u => u.id === message.user_id)?.name || 'Unknown User';
     const forwardContent = `Forwarded from **${originalSender}**\n${message.content || ''}`;
+
     const forwardPromises = chatIds.map(chatId => {
-        return supabaseRef.current.from('messages').insert({
-            chat_id: chatId,
-            user_id: loggedInUser.id,
-            content: forwardContent,
-            attachment_url: message.attachment_url,
-            attachment_metadata: message.attachment_metadata
-        });
+      return supabaseRef.current.from('messages').insert({
+        chat_id: chatId,
+        user_id: loggedInUser.id,
+        content: forwardContent,
+        attachment_url: message.attachment_url,
+        attachment_metadata: message.attachment_metadata,
+      });
     });
+
     try {
-        await Promise.all(forwardPromises);
+      const results = await Promise.all(forwardPromises);
+      const failed = results.filter(r => r.error);
+      if (failed.length > 0) {
+        toast({ variant: 'destructive', title: 'Some shares failed' });
+      } else {
         toast({ title: 'Message Forwarded!' });
+      }
     } catch (error: any) {
-        toast({ variant: 'destructive', title: 'Error Forwarding Message', description: error.message });
+      toast({ variant: 'destructive', title: 'Error Forwarding Message', description: error.message });
     }
   }, [loggedInUser, allUsers, toast]);
 
