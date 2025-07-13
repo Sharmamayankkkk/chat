@@ -62,10 +62,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         const permission = await Notification.requestPermission();
         if (permission === "granted") {
-          new Notification("Notifications Enabled", {
-            body: "You will now receive message notifications.",
-            icon: "/logo/light_KCS.png",
-          });
+          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+              navigator.serviceWorker.getRegistration().then(reg => {
+                if (reg) {
+                  reg.showNotification("Notifications Enabled", {
+                    body: "You will now receive message notifications.",
+                    icon: "/logo/light_KCS.png",
+                  });
+                }
+              });
+          }
         }
       } catch (error) {
         console.error("Error requesting notification permission:", error);
@@ -177,7 +183,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   
   const handleNewMessage = useCallback(
     async (payload: RealtimePostgresChangesPayload<Message>) => {
-      if (!loggedInUser) return
+      if (!loggedInUser) return;
 
       const newMessage = payload.new as Message;
       const isMyMessage = newMessage.user_id === loggedInUser.id;
@@ -204,30 +210,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
 
       const shouldShowNotification = !isMyMessage && Notification.permission === "granted" && (!isChatOpen || !isWindowFocused);
+
       if (shouldShowNotification) {
         const sender = allUsers.find((u) => u.id === newMessage.user_id);
         if (sender) {
           const title = sender.name || "New Message";
           const body = newMessage.content || (newMessage.attachment_metadata?.name ? `Sent: ${newMessage.attachment_metadata.name}` : "Sent an attachment");
           
-          try {
-            const notification = new Notification(title, {
-              body: body,
-              icon: sender.avatar_url || "/logo/light_KCS.png",
-              tag: `chat-${newMessage.chat_id}`,
+          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.getRegistration().then(reg => {
+              if (reg) {
+                reg.showNotification(title, {
+                  body: body,
+                  icon: sender.avatar_url || "/logo/light_KCS.png",
+                  tag: `chat-${newMessage.chat_id}`,
+                  data: { chatId: newMessage.chat_id }
+                });
+              }
             });
-            notification.onclick = () => {
-              window.focus();
-              notification.close();
-              router.push(`/chat/${newMessage.chat_id}`);
-            };
-          } catch(error) {
-            console.error("Error showing notification:", error);
           }
         }
       }
     },
-    [loggedInUser, pathname, allUsers, router],
+    [loggedInUser, pathname, allUsers, router]
   );
 
   useEffect(() => {
