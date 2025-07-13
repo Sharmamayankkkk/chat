@@ -132,6 +132,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         sendDmRequest,
         unblockUser,
         blockedUsers,
+        forwardMessage,
     } = useAppContext();
     const [editingMessage, setEditingMessage] = useState<{ id: number; content: string } | null>(null);
     const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -362,17 +363,16 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         setReplyingTo(message);
     };
 
-    const handleCancelEdit = () => setEditingMessage(null);
-
     const handleReaction = async (message: Message, emoji: string) => {
         if (typeof message.id === 'string') {
              toast({ variant: 'destructive', title: 'Cannot react yet', description: 'Please wait for the message to be sent.' });
              return;
         }
+        // Correct argument order for the RPC call
         const { error } = await supabase.rpc('toggle_reaction', { 
+            p_emoji: emoji, 
             p_message_id: message.id, 
-            p_user_id: loggedInUser.id, 
-            p_emoji: emoji 
+            p_user_id: loggedInUser.id,
         });
         
         if (error) {

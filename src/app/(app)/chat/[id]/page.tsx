@@ -87,6 +87,35 @@ export default function ChatPage() {
   }, [chatId, loggedInUser?.id, resetUnreadCount, supabase])
   
   useEffect(() => {
+    const handleNewMessage = async (payload: any) => {
+        const { data: fullMessage, error } = await supabase
+          .from("messages")
+          .select(FULL_MESSAGE_SELECT_QUERY)
+          .eq("id", payload.new.id)
+          .single()
+        
+        if (error || !fullMessage) return;
+
+        setMessages(currentMessages => {
+            if (currentMessages.some(m => m.id === fullMessage.id)) {
+                return currentMessages;
+            }
+            return [...currentMessages, fullMessage as Message]
+        });
+    }
+
+    const handleUpdatedMessage = async (payload: any) => {
+        const { data: fullMessage, error } = await supabase
+          .from("messages")
+          .select(FULL_MESSAGE_SELECT_QUERY)
+          .eq("id", payload.new.id)
+          .single()
+        
+        if (error || !fullMessage) return;
+        
+        setMessages(current => current.map(m => m.id === payload.new.id ? fullMessage as Message : m));
+    }
+
     const channel = supabase
       .channel(`chat-${chatId}`)
       .on('postgres_changes', {
@@ -94,40 +123,13 @@ export default function ChatPage() {
         schema: 'public',
         table: 'messages',
         filter: `chat_id=eq.${chatId}`
-      }, async (payload) => {
-          if (payload.new.user_id === loggedInUser?.id) return;
-
-          const { data: fullMessage, error } = await supabase
-            .from("messages")
-            .select(FULL_MESSAGE_SELECT_QUERY)
-            .eq("id", payload.new.id)
-            .single()
-          
-          if (error || !fullMessage) return;
-
-          setMessages(currentMessages => {
-             if (currentMessages.some(m => m.id === fullMessage.id)) {
-               return currentMessages;
-             }
-             return [...currentMessages, fullMessage as Message]
-          });
-      })
+      }, handleNewMessage)
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
         table: 'messages',
         filter: `chat_id=eq.${chatId}`
-       }, async (payload) => {
-          const { data: fullMessage, error } = await supabase
-            .from("messages")
-            .select(FULL_MESSAGE_SELECT_QUERY)
-            .eq("id", payload.new.id)
-            .single()
-          
-          if (error || !fullMessage) return;
-          
-          setMessages(current => current.map(m => m.id === payload.new.id ? fullMessage as Message : m));
-       })
+       }, handleUpdatedMessage)
       .subscribe();
 
     return () => {

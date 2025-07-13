@@ -245,11 +245,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       supabaseRef.current.channel('public:messages')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => handleNewMessage(payload as any)),
       supabaseRef.current.channel('participants-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, () => fetchInitialData(session)),
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, () => {
+          initialDataLoaded.current = false;
+          fetchInitialData(session)
+        }),
       supabaseRef.current.channel('dm-requests-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, () => fetchInitialData(session)),
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, () => {
+          initialDataLoaded.current = false;
+          fetchInitialData(session)
+        }),
       supabaseRef.current.channel('blocked-users-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, () => fetchInitialData(session)),
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, () => {
+          initialDataLoaded.current = false;
+          fetchInitialData(session)
+        }),
       supabaseRef.current.channel('public:chats')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chats' }, payload => {
             setChats(current => current.map(c => c.id === payload.new.id ? {...c, ...payload.new} : c))
