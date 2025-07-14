@@ -116,7 +116,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (chatIds.length > 0) {
             const { data: chatsData } = await supabaseRef.current
                 .from('chats')
-                .select(`*, participants:participants!chat_id(*, profiles!user_id(*))`)
+                .select('*, participants:participants!chat_id(*, profiles!user_id(*))')
                 .in('id', chatIds);
             
             const initialChats = (chatsData || []).map(c => ({...c, messages: [], unreadCount: 0})) as Chat[];
