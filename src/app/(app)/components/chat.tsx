@@ -864,7 +864,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         const bubbleStyle = isMyMessage ? outgoingBubbleStyle : incomingBubbleStyle;
         return (
             <div className={cn("flex items-end gap-2 group/message", isMyMessage ? "justify-end" : "justify-start")}>
-                 {!isMyMessage && <div className="w-8" />}
+                 {!isMyMessage && <div className="w-8 shrink-0" />}
                  <div
                     className="relative max-w-[85%] sm:max-w-md lg:max-w-lg rounded-lg text-sm px-2 sm:px-3 py-2"
                     style={bubbleStyle}
@@ -874,7 +874,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                         <span>This message was deleted</span>
                     </div>
                 </div>
-                 {isMyMessage && <div className="w-8" />}
+                 {isMyMessage && <div className="w-8 shrink-0" />}
             </div>
         );
     }
@@ -925,19 +925,19 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     
     return (
       <div key={message.id} id={`message-${message.id}`} className={cn(
-          "flex items-end gap-2 group/message",
+          "flex w-full items-end gap-2 group/message",
           isMyMessage ? "justify-end" : "justify-start",
           message.id === highlightMessageId && "rounded-lg"
       )}>
       {!isMyMessage && (
-          <Avatar className="h-8 w-8 self-end">
+          <Avatar className="h-8 w-8 self-end shrink-0">
           <AvatarImage src={senderAvatar} alt={senderName} data-ai-hint="avatar" />
           <AvatarFallback>{senderFallback}</AvatarFallback>
           </Avatar>
       )}
-      <div {...swipeHandlers} className={cn("relative transition-transform duration-200 ease-out", isMyMessage ? "group-data-[swiped=true]/message:translate-x-[-2rem]" : "group-data-[swiped=true]/message:translate-x-[2rem]")}>
+      <div {...swipeHandlers} className={cn("relative transition-transform duration-200 ease-out max-w-[85%] sm:max-w-[70%] md:max-w-[60%]", isMyMessage ? "group-data-[swiped=true]/message:translate-x-[-2rem]" : "group-data-[swiped=true]/message:translate-x-[2rem]")}>
           <div 
-              className={cn("group/bubble relative max-w-[85%] sm:max-w-[80%] md:max-w-md lg:max-w-lg rounded-lg text-sm px-2 sm:px-3 py-2 break-words min-w-0")}
+              className={cn("group/bubble relative rounded-lg text-sm px-2 sm:px-3 py-2 break-words")}
               style={bubbleStyle}
           >
               {isEditing ? (
@@ -1060,7 +1060,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
           </div>
         </div>
       {isMyMessage && (
-          <Avatar className="h-8 w-8 self-end">
+          <Avatar className="h-8 w-8 self-end shrink-0">
               <AvatarImage src={loggedInUser.avatar_url} alt={loggedInUser.name} data-ai-hint="avatar" />
               <AvatarFallback>{loggedInUser.name?.charAt(0)}</AvatarFallback>
           </Avatar>
