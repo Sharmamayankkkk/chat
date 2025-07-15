@@ -33,7 +33,6 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // These are routes that can be accessed without a full session
   const publicRoutes = ['/login', '/signup', '/forgot-password', '/update-password', '/auth/callback'];
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
 
@@ -45,11 +44,7 @@ export async function middleware(request: NextRequest) {
   if (session) {
     // Special handling for the update-password page
     if (pathname === '/update-password') {
-      // If the user is on the update password page, but not in recovery mode, redirect them.
-      // Supabase sets user_metadata.recovery when a recovery link is used. We can't access this directly here.
-      // However, if a user has a valid session and lands here, it's likely not from a recovery link.
-      // A user in recovery mode has a temporary session that is only valid for this action.
-      // For simplicity, we'll allow access if they have a session, as the page itself handles logic.
+      // Allow access if they have a session, as the page itself handles logic.
       return response;
     }
 
