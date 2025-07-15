@@ -1,7 +1,7 @@
 
 "use client"
 
-import { createContext, useContext, useState, type ReactNode, useEffect, useCallback, useMemo, useRef } from "react"
+import { createContext, useContext, useState, type ReactNode, useEffect, useCallback, useRef } from "react"
 import type { User, Chat, ThemeSettings, Message, DmRequest, AppContextType } from "@/lib/types"
 import { createClient } from "@/lib/utils"
 import { Icons } from "@/components/icons"
@@ -52,41 +52,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const initialDataLoaded = useRef(false);
-  const notificationPermissionRequested = useRef(false);
 
   const requestNotificationPermission = useCallback(async () => {
-    if (notificationPermissionRequested.current) return;
-    notificationPermissionRequested.current = true;
-
     if ("Notification" in window && Notification.permission === "default") {
-      try {
-        const permission = await Notification.requestPermission();
-        if (permission === "granted") {
-          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-              navigator.serviceWorker.getRegistration().then(reg => {
-                if (reg) {
-                  reg.showNotification("Notifications Enabled", {
-                    body: "You will now receive message notifications.",
-                    icon: "/logo/light_KCS.png",
-                  });
-                }
-              });
-          }
-        }
-      } catch (error) {
-        console.error("Error requesting notification permission:", error);
-      }
+      await Notification.requestPermission()
     }
   }, []);
 
-  const fetchInitialData = useCallback(async (session: Session) => {
+  const fetchInitialData = useCallback(async (currentSession: Session) => {
     if (initialDataLoaded.current) return;
     initialDataLoaded.current = true;
     
     try {
-        const { user } = session;
+        const { user } = currentSession;
 
-        const { data: profile, error: profileError } = await supabaseRef.current.from("profiles").select("*").eq("id", user.id).single();
+        const { data: profile, error: profileError } = await supabaseRef.current.from("profiles").select("*, theme_settings").eq("id", user.id).single();
+
         if (profileError || !profile) {
             throw new Error("Could not fetch user profile. Please sign out and sign in again.");
         }
@@ -147,40 +128,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await supabaseRef.current.auth.signOut();
     }
   }, [toast, requestNotificationPermission]);
-
+  
+  // This effect runs once on mount to check the initial session.
   useEffect(() => {
-    let mounted = true;
-    const { data: { subscription } } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
-        if (!mounted) return;
-        setSession(session);
+    supabaseRef.current.auth.getSession().then(async ({ data: { session } }) => {
+      setSession(session)
+      if (session) {
+        await fetchInitialData(session)
+      }
+      setIsReady(true)
+    })
 
-        if (event === 'SIGNED_IN' && session) {
-            await fetchInitialData(session);
-        } else if (event === 'SIGNED_OUT') {
-            initialDataLoaded.current = false;
-            setLoggedInUser(null);
-            setChats([]);
-            setAllUsers([]);
-            setDmRequests([]);
-            setBlockedUsers([]);
+    const { data: { subscription } } = supabaseRef.current.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session)
+        // On sign out, clear all user data
+        if (event === "SIGNED_OUT") {
+          setLoggedInUser(null)
+          setChats([])
+          setAllUsers([])
+          setDmRequests([])
+          setBlockedUsers([])
+          initialDataLoaded.current = false
         }
-        setIsReady(true);
-    });
-    
-    supabaseRef.current.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-            setSession(session);
-            fetchInitialData(session);
-        }
-        setIsReady(true);
-    });
+        // On sign in, a page refresh will be triggered by the auth callback,
+        // which will re-run the getSession() logic above for a clean state.
+      }
+    )
 
     return () => {
-        mounted = false;
-        subscription.unsubscribe();
-    };
-  }, [fetchInitialData]);
-  
+      subscription?.unsubscribe()
+    }
+  }, [fetchInitialData])
+
+
   const handleNewMessage = useCallback(
     async (payload: RealtimePostgresChangesPayload<Message>) => {
       if (!loggedInUser) return;
