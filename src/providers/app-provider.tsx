@@ -144,17 +144,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [toast, requestNotificationPermission]);
   
-  // This effect handles authentication state changes.
   useEffect(() => {
-    const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
-        setSession(session);
-        if (event === "SIGNED_IN" && session?.user) {
-            // Add a small delay to allow for db replication after signup
-            setTimeout(() => fetchInitialData(session.user), 500);
-        } else if (event === "SIGNED_OUT") {
+    const { data: authListener } = supabaseRef.current.auth.onAuthStateChange((event, session) => {
+        setSession(session)
+        if (event === "SIGNED_OUT") {
             resetState();
+        } else if (event === "SIGNED_IN" && session?.user) {
+            fetchInitialData(session.user)
+        } else if (event === "INITIAL_SESSION" && session?.user) {
+            fetchInitialData(session.user);
         }
-        setIsReady(true);
+        setIsReady(true)
     });
 
     return () => {

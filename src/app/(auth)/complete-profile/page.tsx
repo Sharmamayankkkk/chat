@@ -41,15 +41,29 @@ export default function CompleteProfilePage() {
             return;
         }
 
-        const { data: profile, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
+        let profile = null;
+        let profileError = null;
+
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', user.id)
+                .single();
+            
+            if (data) {
+                profile = data;
+                profileError = null;
+                break;
+            }
+            profileError = error;
+            await new Promise(res => setTimeout(res, 300 * attempt));
+        }
         
-        if (error) {
-            setError("Could not fetch your profile. Please try again.");
+        if (profileError || !profile) {
+            setError("Could not fetch your profile. Please try logging in again.");
             setIsLoading(false);
+            console.error("Failed to fetch profile after multiple attempts:", profileError);
             return;
         }
 
@@ -59,7 +73,7 @@ export default function CompleteProfilePage() {
         }
         
         setUser(profile as User);
-        setName(profile.name || '');
+        setName(profile.name || user.user_metadata.name || '');
         setUsername(profile.username || '');
         setGender(profile.gender || 'male');
         setIsLoading(false);
@@ -112,7 +126,6 @@ export default function CompleteProfilePage() {
         name: name.trim(),
         username: username.trim(),
         gender: gender,
-        // Set a default avatar if one isn't already set from OAuth
         avatar_url: user.avatar_url || avatar_url
       })
       .eq('id', user.id);
@@ -126,9 +139,8 @@ export default function CompleteProfilePage() {
         title: "Profile Complete!",
         description: "Welcome to Krishna Connect!",
       });
-      // We need to refresh the page to trigger middleware to re-check the user
-      // and get the updated user context in AppProvider.
-      window.location.href = '/chat';
+      router.push('/chat');
+      router.refresh();
     }
   };
 

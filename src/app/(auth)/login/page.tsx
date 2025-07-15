@@ -40,7 +40,7 @@ export default function LoginPage() {
       setError(error.message);
     } else {
       const next = searchParams.get('next');
-      router.push(next || '/chat');
+      router.push(next || '/');
       router.refresh(); 
     }
   };

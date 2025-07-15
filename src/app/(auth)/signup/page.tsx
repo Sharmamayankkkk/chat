@@ -1,5 +1,5 @@
 
-'use client'
+'use client';
 
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -71,7 +71,7 @@ export default function SignupPage() {
         password,
         options: {
             data: {
-                name,
+                name: name.trim(),
                 username: username.trim(),
                 gender,
                 avatar_url,
