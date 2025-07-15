@@ -76,11 +76,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dataLoadedForSession.current = user.id
 
     try {
-        const { data: profile, error: profileError } = await supabaseRef.current.from("profiles").select("*, theme_settings").eq("id", user.id).single();
+        let profile: User | null = null;
+        let profileError: any = null;
+
+        // Add a retry mechanism to handle potential replication delay
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            const { data, error } = await supabaseRef.current.from("profiles").select("*, theme_settings").eq("id", user.id).single();
+            if (data) {
+                profile = data as User;
+                break;
+            }
+            profileError = error;
+            await new Promise(res => setTimeout(res, 300 * attempt));
+        }
 
         if (profileError || !profile) {
+            console.error("Failed to fetch profile after multiple attempts:", profileError)
             throw new Error("Could not fetch user profile. Please try logging in again.");
         }
+        
         const fullUserProfile = { ...profile, email: user.email } as User;
         if (fullUserProfile.theme_settings) {
             setThemeSettingsState(prev => ({ ...prev, ...fullUserProfile.theme_settings }));
@@ -144,7 +158,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
         setSession(session)
         if (session?.user) {
-            await fetchInitialData(session.user);
+            // Add a small delay to allow for db replication after signup
+            setTimeout(() => fetchInitialData(session.user), 100);
         } else {
             resetState();
         }
