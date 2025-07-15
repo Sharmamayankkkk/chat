@@ -1,6 +1,10 @@
 
 'use client';
 
+// This is the main component that orchestrates the entire chat view.
+// We've broken it down into smaller, more manageable pieces to keep the code clean.
+// Think of this component as the "manager" that brings together the header, the message list, and the input field.
+
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -62,13 +66,6 @@ const formatBytes = (bytes: number, decimals = 2) => {
 const DELETED_MESSAGE_MARKER = '[[MSG_DELETED]]';
 const SYSTEM_MESSAGE_PREFIX = '[[SYS:';
 
-const FULL_MESSAGE_SELECT_QUERY = `
-    *, 
-    read_by,
-    profiles!user_id(*), 
-    replied_to_message:reply_to_message_id(*, profiles!user_id(*))
-`;
-
 const Spoiler = ({ content }: { content: string }) => {
     const [revealed, setRevealed] = useState(false);
     return (
@@ -122,7 +119,11 @@ const parseMarkdown = (text: string | null) => {
 };
 
 export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLoadingMore, hasMoreMessages, topMessageSentinelRef, scrollContainerRef, initialUnreadCount = 0 }: ChatProps) {
+    // This is a "hook" from a small library we use for showing pop-up notifications (like "Message copied!").
     const { toast } = useToast();
+    
+    // This is our custom "hook" to access shared application data and functions,
+    // like the theme settings, the list of all users, and functions to block a user or leave a group.
     const { 
         themeSettings, 
         allUsers, 
@@ -134,10 +135,16 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         blockedUsers,
         forwardMessage,
     } = useAppContext();
+
+    // These are "state" variables. They hold data that can change and cause the component to re-render.
+    // `useState` is a fundamental React hook for managing component state.
     const [editingMessage, setEditingMessage] = useState<{ id: number; content: string } | null>(null);
     const [replyingTo, setReplyingTo] = useState<Message | null>(null);
     const [isRequestDmOpen, setIsRequestDmOpen] = useState(false);
     
+    // `useRef` is a React hook that lets us hold a reference to a DOM element,
+    // like a div, so we can interact with it directly (e.g., to scroll it).
+    // It's like `document.getElementById` but integrated with React.
     const messagesEndRef = useRef<HTMLDivElement>(null);
     
     const [customEmojiList, setCustomEmojiList] = useState<string[]>([]);
@@ -159,6 +166,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     
     const hasScrolledOnLoad = useRef(false);
 
+    // The `useEffect` hook runs code after the component has rendered.
+    // This one sets up a scroll listener to show or hide the "scroll to bottom" button.
     useEffect(() => {
         const scrollContainer = scrollContainerRef.current;
         if (!scrollContainer) return;
@@ -169,9 +178,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         };
 
         scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+        // The return function is a "cleanup" function. React runs it when the component is removed
+        // to prevent memory leaks, like removing the event listener.
         return () => scrollContainer.removeEventListener('scroll', handleScroll);
     }, [scrollContainerRef]);
 
+    // This effect checks for the first unread mention and stores its ID.
     useEffect(() => {
         if (initialUnreadCount > 0 && chat.messages && chat.messages.length > 0 && loggedInUser?.username) {
             const unreadMessages = chat.messages.slice(-initialUnreadCount);
@@ -185,6 +197,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         }
     }, [initialUnreadCount, chat.messages, loggedInUser?.username]);
 
+    // This effect fetches our custom emoji and sticker assets from the server when the component loads.
     useEffect(() => {
         fetch('/api/assets')
             .then(res => {
@@ -202,8 +215,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             .catch(err => console.error("Failed to load assets:", err));
     }, []);
 
+    // We create a Supabase client instance to interact with our database.
     const supabase = createClient();
 
+    // `useMemo` is a performance optimization hook. It calculates a value and "memoizes" (remembers) it.
+    // The value is only recalculated if one of the dependencies (the array at the end) changes.
+    // This prevents expensive calculations on every single render.
     const chatPartner = useMemo(() => {
         if (chat.type !== 'dm' || !chat.participants) return null;
         const partnerRecord = chat.participants.find(p => p.user_id !== loggedInUser.id);
@@ -265,6 +282,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         );
     }, [dmRequests, loggedInUser, chatPartner]);
 
+    // `useCallback` is another performance hook, similar to `useMemo`.
+    // It memoizes a function, so it isn't recreated on every render.
+    // This is important when passing functions down to child components to prevent unnecessary re-renders.
     const jumpToMessage = useCallback((messageId: number) => {
         setIsPinnedDialogOpen(false);
         const messageElement = document.getElementById(`message-${messageId}`);
@@ -280,6 +300,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         }
     }, [toast]);
 
+    // This effect handles scrolling when the chat loads.
+    // It tries to scroll to a highlighted message if there is one, otherwise it scrolls to the bottom.
     useEffect(() => {
       const scrollContainer = scrollContainerRef.current;
       if (!scrollContainer || !messagesEndRef.current) return;
@@ -298,6 +320,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
       }
     }, [chat.messages, highlightMessageId, jumpToMessage, scrollContainerRef]);
     
+    // This effect smoothly scrolls to the bottom when new messages are added,
+    // but only if the user is already near the bottom. This prevents auto-scrolling
+    // when the user is reading older messages.
     useEffect(() => {
         const scrollContainer = scrollContainerRef.current;
         if (!scrollContainer) return;
@@ -308,6 +333,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         }
     }, [chat.messages?.length, scrollContainerRef]);
 
+    // This function handles saving an edited message.
     const handleSaveEdit = async () => {
         if (!editingMessage) return;
         const { error } = await supabase
@@ -322,6 +348,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         }
     };
 
+    // This function handles deleting a message for everyone in the chat.
+    // It first updates the UI optimistically (shows it as deleted immediately)
+    // and then makes the actual request to the server.
     const handleDeleteForEveryone = async (messageId: number) => {
         const originalMessages = chat.messages || [];
         const newMessages = originalMessages.map(m => 
@@ -343,16 +372,19 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             .eq('id', messageId);
 
         if (error) {
+            // If the server request fails, we revert the UI back to its original state.
             toast({ variant: 'destructive', title: "Error deleting message", description: error.message });
             setMessages(originalMessages);
         }
     };
     
+    // Simple utility function to copy text to the clipboard.
     const handleCopy = (text: string) => {
         navigator.clipboard.writeText(text);
         toast({ title: 'Copied to clipboard' });
     };
 
+    // Functions to set the component's state for editing or replying to a message.
     const handleStartEdit = (message: Message) => {
         setReplyingTo(null);
         setEditingMessage({ id: message.id as number, content: message.content || '' });
@@ -363,12 +395,13 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         setReplyingTo(message);
     };
 
+    // This function handles adding or removing a reaction from a message.
+    // It calls a custom database function (RPC) on Supabase to handle the logic.
     const handleReaction = async (message: Message, emoji: string) => {
         if (typeof message.id === 'string') {
              toast({ variant: 'destructive', title: 'Cannot react yet', description: 'Please wait for the message to be sent.' });
              return;
         }
-        // Correct argument order for the RPC call
         const { error } = await supabase.rpc('toggle_reaction', { 
             p_emoji: emoji, 
             p_message_id: message.id, 
@@ -388,6 +421,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
       handleReaction(message, emojiUrl);
     };
 
+    // A function to send a special "system" message, like "User pinned a message".
     const sendSystemMessage = async (text: string) => {
         const { error } = await supabase.from('messages').insert({
             chat_id: chat.id,
@@ -399,6 +433,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         }
     };
 
+    // Functions to toggle the "starred" or "pinned" state of a message.
     const handleToggleStar = async (messageToStar: Message) => {
         if (typeof messageToStar.id === 'string') return;
         const { error } = await supabase
@@ -432,6 +467,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         }
     };
 
+    // Functions to scroll to the bottom of the chat or to the first unread mention.
     const handleScrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
@@ -443,6 +479,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         }
     };
 
+    // These are dynamic styles based on the user's theme settings.
     const wallpaperStyle = {
       backgroundImage: themeSettings.chatWallpaper ? `url(${themeSettings.chatWallpaper})` : `url('/chat-bg.png')`,
       backgroundSize: 'cover',
@@ -461,6 +498,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
       color: getContrastingTextColor(themeSettings.incomingBubbleColor),
     };
 
+    // Determines the status of a message (pending, sent, or read).
     const getMessageStatus = (message: Message) => {
         const isMyMessage = message.user_id === loggedInUser.id;
         if (!isMyMessage) return null;
@@ -477,12 +515,14 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         return allRead ? 'read' : 'sent';
     }
     
+    // This function is the heart of our message rendering. It parses the message content
+    // for special formatting like mentions, custom emojis, and links, and replaces them
+    // with the appropriate React components.
     const parseContent = useCallback((content: string | null): (string | React.ReactNode)[] => {
         if (!content) return [];
 
         let processedContent = content;
 
-        // Early return for forwarded messages to handle them separately
         if (processedContent.startsWith('Forwarded from')) {
             const parts = processedContent.split('\n');
             const forwardLine = parts[0];
@@ -567,6 +607,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
     }, [customEmojiList, allUsers, loggedInUser?.id]);
 
+    // This function determines how to display a message based on its content,
+    // especially whether it's a text message or an attachment (image, file, event).
     const renderMessageContent = (message: Message) => {
         if (message.attachment_url) {
             const { type = '', name = 'attachment', size = 0 } = message.attachment_metadata || {};
@@ -680,6 +722,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         return <p className="whitespace-pre-wrap break-words">{parseContent(message.content)}</p>;
     }
     
+    // Prepares custom emojis for the reaction picker.
     const reactionPickerCustomEmojis = useMemo(() => {
         return customEmojiList.map(url => ({
             id: url,
@@ -688,6 +731,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         }));
     }, [customEmojiList]);
 
+    // Renders the little reaction buttons below a message.
     const renderReactions = (message: Message) => {
       if (!message.reactions || Object.keys(message.reactions).length === 0) return null;
       
@@ -731,6 +775,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
       )
     }
 
+    // This function processes the list of messages to insert date separators ("Today", "Yesterday")
+    // and an "Unread Messages" separator where needed.
     const messagesWithSeparators = useMemo(() => {
         if (!chat.messages || chat.messages.length === 0) return [];
     
@@ -764,6 +810,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         return items;
     }, [chat.messages, initialUnreadCount]);
 
+    // Simple components for rendering the separators in the message list.
     const DateSeparator = ({ date }: { date: string }) => (
         <div className="relative my-4">
             <div className="absolute inset-0 flex items-center">
@@ -804,11 +851,14 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         );
     }
   
+  // This is the component for a single message bubble.
   const MessageBubble = ({ message }: { message: Message }) => {
+    // Handle system messages (e.g., "User pinned a message").
     if (message.content && message.content.startsWith(SYSTEM_MESSAGE_PREFIX)) {
         return <SystemMessage content={message.content} />;
     }
     
+    // Handle deleted messages.
     if (message.content === DELETED_MESSAGE_MARKER) {
         const isMyMessage = message.user_id === loggedInUser.id;
         const bubbleStyle = isMyMessage ? outgoingBubbleStyle : incomingBubbleStyle;
@@ -835,6 +885,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const messageStatus = getMessageStatus(message);
     const isOptimistic = typeof message.id === 'string';
 
+    // This adds the "swipe to reply" functionality.
     const swipeHandlers = useSwipeable({
       onSwipedRight: () => {
         if (!isMyMessage && !isOptimistic) handleStartReply(message);
@@ -892,7 +943,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
               {isEditing ? (
                   <div className="w-full">
                       <p className="text-xs font-semibold text-primary mb-2">Editing...</p>
-                      {/* We let ChatInput handle the actual input */}
+                      {/* The ChatInput component handles the actual editing input field */}
                   </div>
               ) : (
                   <>
@@ -920,6 +971,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                   </>
               )}
               
+              {/* This is the message action menu that appears on hover */}
               {!isEditing && (
                   <div className={cn(
                       "absolute -top-4 flex items-center gap-1 opacity-0 group-hover/bubble:opacity-100 transition-opacity",
@@ -1017,8 +1069,11 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     );
   }
 
+  // This is the main return statement for the Chat component.
+  // It lays out the entire chat interface, using all the pieces and logic defined above.
   return (
     <div className="flex h-dvh flex-col">
+        {/* These are Dialog components. They are modals that pop up over the screen. */}
         <ImageViewerDialog open={isImageViewerOpen} onOpenChange={setIsImageViewerOpen} src={imageViewerSrc} />
         {chatPartner && <RequestDmDialog open={isRequestDmOpen} onOpenChange={setIsRequestDmOpen} targetUser={chatPartner} />}
         {messageToForward && <ForwardMessageDialog open={!!messageToForward} onOpenChange={(open) => !open && setMessageToForward(null)} message={messageToForward} />}
@@ -1036,6 +1091,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             isAdmin={isGroupAdmin || false}
         />
 
+      {/* This is the header of the chat window. */}
       <header className="flex items-center justify-between p-2 border-b gap-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
             <div className="md:hidden">
@@ -1086,6 +1142,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         </div>
       </header>
       
+      {/* This is the main message area. */}
       <div className="flex-1 relative min-h-0">
         <div className="absolute inset-0 z-0" style={wallpaperStyle} />
         <ScrollArea viewportRef={scrollContainerRef} className="absolute inset-0 h-full w-full">
@@ -1104,6 +1161,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 </div>
                 {(messagesWithSeparators || [])
                 .filter(item => {
+                    // This makes sure we don't show messages from users the current user has blocked.
                     if (!('user_id' in item) || !item.user_id) return true;
                     if (!blockedUsers) return true;
                     return !blockedUsers.includes(item.user_id);
@@ -1118,9 +1176,11 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     const message = item as Message;
                     return <MessageBubble key={message.id} message={message} />
                 })}
+                {/* This is an invisible div at the end of the message list that we use as a target to scroll to. */}
                 <div ref={messagesEndRef} />
             </div>
         </ScrollArea>
+        {/* These are the floating buttons for scrolling down or jumping to a mention. */}
         <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-2">
             {firstUnreadMentionId && (
                 <TooltipProvider>
@@ -1153,6 +1213,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             )}
         </div>
       </div>
+        {/* This is our newly created ChatInput component. */}
         <ChatInput
             chat={chat}
             loggedInUser={loggedInUser}

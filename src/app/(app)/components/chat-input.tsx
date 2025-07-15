@@ -1,6 +1,10 @@
 
 'use client';
 
+// This component is responsible for everything related to the chat input area.
+// We moved it out of the main chat.tsx file to keep the code organized and easier to understand.
+// It handles typing, sending messages, attachments, voice notes, emojis, mentions, and text formatting.
+
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, StopCircle, Copy, Star, Share2, Shield, Loader2, Pause, Play, StickyNote, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock, CircleSlash, ArrowDown, AtSign, Image as ImageIcon, Info, Bold, Italic, Strikethrough, Code } from 'lucide-react';
@@ -28,6 +32,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Image from 'next/image';
 import { useAppContext } from '@/providers/app-provider';
 
+// This is a constant string used in our Supabase database queries.
+// It tells the database exactly which columns we want to fetch for a message,
+// including related data like the sender's profile and the message being replied to.
 const FULL_MESSAGE_SELECT_QUERY = `
     *, 
     read_by,
@@ -35,12 +42,15 @@ const FULL_MESSAGE_SELECT_QUERY = `
     replied_to_message:reply_to_message_id(*, profiles!user_id(*))
 `;
 
+// A helper function to format seconds into a "minutes:seconds" string for the voice recorder.
 const formatRecordingTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = Math.floor(seconds % 60);
     return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
 };
 
+// This defines the "props" (properties) that our ChatInput component accepts.
+// It's how the parent component (chat.tsx) passes data and functions down to it.
 interface ChatInputProps {
     chat: Chat;
     loggedInUser: User;
@@ -80,6 +90,7 @@ export function ChatInput({
 }: ChatInputProps) {
     const { toast } = useToast();
     const { allUsers } = useAppContext();
+    // State variables for the component.
     const [message, setMessage] = useState('');
     const [caption, setCaption] = useState('');
     const [attachmentPreview, setAttachmentPreview] = useState<{ file: File, url: string } | null>(null);
@@ -88,6 +99,7 @@ export function ChatInput({
     const attachmentInputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     
+    // State for voice recording.
     const [isRecording, setIsRecording] = useState(false);
     const [recordingStatus, setRecordingStatus] = useState<'recording' | 'paused'>('recording');
     const [recordingTime, setRecordingTime] = useState(0);
@@ -99,9 +111,11 @@ export function ChatInput({
     const [stickerList, setStickerList] = useState<string[]>([]);
     const [customEmojiList, setCustomEmojiList] = useState<string[]>([]);
 
+    // State for the @mention popup.
     const [mentionQuery, setMentionQuery] = useState<string | null>(null);
     const [activeMentionIndex, setActiveMentionIndex] = useState(0);
     
+    // State for the text formatting toolbar.
     const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
     const [toolbarPosition, setToolbarPosition] = useState<{ top: number; left: number } | null>(null);
     const toolbarRef = useRef<HTMLDivElement>(null);
@@ -109,6 +123,8 @@ export function ChatInput({
     const supabase = createClient();
     const isGroup = chat.type === 'group' || chat.type === 'channel';
 
+    // This `useEffect` hook watches for changes to `editingMessage`.
+    // If we start editing a message, it populates the input field with the message content.
     useEffect(() => {
         if (editingMessage) {
             setMessage(editingMessage.content);
@@ -118,12 +134,14 @@ export function ChatInput({
         }
     }, [editingMessage]);
 
+    // This hook focuses the input field when we start replying to a message.
     useEffect(() => {
         if (replyingTo) {
             textareaRef.current?.focus();
         }
     }, [replyingTo]);
     
+    // This hook fetches the list of available stickers and custom emojis from our API.
     useEffect(() => {
         fetch('/api/assets')
             .then(res => res.json())
@@ -133,10 +151,13 @@ export function ChatInput({
             });
     }, []);
 
+    // The main function for sending a message. It handles both text and attachments.
     const handleSendMessage = async ({ content, contentToSave, attachment }: { content: string, contentToSave?: string, attachment?: { file: File, url: string }}) => {
         if (isSending || (content.trim() === '' && !attachment)) return;
         
         setIsSending(true);
+        // Create a temporary, unique ID for the message. This allows us to display it in the UI
+        // instantly while the real message is being sent to the server. This is called "optimistic UI".
         const tempId = `temp-${uuidv4()}`;
         
         const optimisticMessage: Message = {
@@ -155,6 +176,7 @@ export function ChatInput({
           read_by: [loggedInUser.id]
         };
         
+        // Add the optimistic message to the UI and clear the input fields.
         setMessages(current => [...current, optimisticMessage]);
         setMessage('');
         setCaption('');
@@ -164,6 +186,7 @@ export function ChatInput({
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
 
         try {
+            // If there's an attachment, upload it to Supabase Storage first.
             let attachmentUrl: string | null = null;
             let attachmentMetadata: AttachmentMetadata | null = null;
             if (attachment) {
@@ -185,6 +208,7 @@ export function ChatInput({
                 attachmentMetadata = { name: file.name, type: file.type, size: file.size };
             }
             
+            // Now, insert the final message data into the 'messages' table in the database.
             let finalContent = contentToSave ?? content;
             const { data: insertedMessage, error } = await supabase
                 .from('messages')
@@ -201,6 +225,8 @@ export function ChatInput({
 
             if (error) throw error;
             
+            // Once the message is successfully saved to the database, we replace the
+            // temporary optimistic message in our UI with the real one from the server.
             if (insertedMessage) {
               setMessages(current => current.map(m => (m.id === tempId ? (insertedMessage as Message) : m)));
             } else {
@@ -209,12 +235,14 @@ export function ChatInput({
 
         } catch (error: any) {
              toast({ variant: 'destructive', title: "Error sending message", description: error.message });
+             // If sending fails, remove the optimistic message from the UI.
              setMessages(current => current.filter(m => m.id !== tempId));
         } finally {
             setIsSending(false);
         }
     };
     
+    // A specialized function for sending stickers, which are treated as attachments.
     const handleSendSticker = async (stickerUrl: string) => {
         if (isSending) return;
         
@@ -227,6 +255,7 @@ export function ChatInput({
             size: 0 
         };
 
+        // Optimistic UI update
         const optimisticMessage: Message = {
             id: tempId,
             created_at: new Date().toISOString(),
@@ -248,6 +277,7 @@ export function ChatInput({
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
         
         try {
+            // Send to database
             const { data: insertedMessage, error } = await supabase
                 .from('messages')
                 .insert({
@@ -263,6 +293,7 @@ export function ChatInput({
     
             if (error) throw error;
             
+            // Replace optimistic with real message
             if (insertedMessage) {
               setMessages(current => current.map(m => (m.id === tempId ? (insertedMessage as Message) : m)));
             }
@@ -275,6 +306,7 @@ export function ChatInput({
         }
     };
     
+    // Event handlers for the emoji/sticker picker.
     const handleEmojiClick = (emojiData: EmojiClickData) => {
         setMessage(prevMessage => prevMessage + emojiData.emoji);
     };
@@ -292,6 +324,7 @@ export function ChatInput({
         setIsEmojiOpen(false);
     };
 
+    // Handlers for file attachments.
     const handleAttachmentClick = () => attachmentInputRef.current?.click();
 
     const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -308,6 +341,7 @@ export function ChatInput({
         if (event.target) event.target.value = '';
     };
 
+    // Voice recording logic using the browser's MediaRecorder API.
     const handleStartRecording = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -382,6 +416,7 @@ export function ChatInput({
         }
     };
 
+    // This filters the list of users for the @mention popup based on the user's query.
     const mentionableUsers = useMemo(() => {
         if (mentionQuery === null || !isGroup || !chat.participants) return [];
         
@@ -398,6 +433,8 @@ export function ChatInput({
         });
     }, [mentionQuery, chat.participants, isGroup]);
 
+    // This function runs every time the user types in the message input.
+    // It also checks if the user is trying to start a mention (by typing '@').
     const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const value = e.target.value;
         if (editingMessage) {
@@ -419,6 +456,8 @@ export function ChatInput({
         }
     };
     
+    // This is a complex helper function to figure out the exact pixel coordinates
+    // of the text cursor in the textarea. We need this to position the formatting toolbar correctly.
     const getCaretCoordinates = (element: HTMLTextAreaElement, position: number) => {
         const isBrowser = typeof window !== 'undefined'
         if (!isBrowser) {
@@ -466,6 +505,8 @@ export function ChatInput({
         return coordinates
       }
     
+    // This function runs when the user selects text in the input field,
+    // and it positions the formatting toolbar above the selected text.
     const handleTextSelection = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
       const textarea = e.currentTarget;
       const start = textarea.selectionStart;
@@ -490,6 +531,7 @@ export function ChatInput({
       });
     };
 
+    // This function wraps the selected text with formatting characters (e.g., **, _, ~~).
     const applyFormatting = (format: 'bold' | 'italic' | 'strikethrough' | 'code') => {
         if (!selection || !textareaRef.current) return;
 
@@ -525,6 +567,7 @@ export function ChatInput({
         }, 10);
     };
 
+    // This function replaces the mention query (e.g., @joh) with the selected username.
     const handleMentionSelect = (username: string) => {
         const textarea = textareaRef.current;
         if (!textarea) return;
@@ -556,6 +599,8 @@ export function ChatInput({
         }, 0);
     };
 
+    // This function handles keyboard events, like sending a message with Enter,
+    // or navigating the mention popup with arrow keys.
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (mentionQuery !== null && mentionableUsers.length > 0) {
             if (e.key === 'ArrowDown') {
@@ -585,6 +630,8 @@ export function ChatInput({
 
     const currentMessageValue = editingMessage ? editingMessage.content : message;
 
+    // These are conditional renders. They show different UI elements based on the chat's state.
+    // For example, if a channel is read-only, we show a warning instead of the input box.
     if (isChannel && !canPostInChannel) {
         return (
             <div className="p-2 border-t bg-background shrink-0">
@@ -627,6 +674,7 @@ export function ChatInput({
             </div>
         );
     }
+    // This shows the voice recording UI when a recording is in progress.
     if (isRecording) {
         return (
             <div className="p-2 border-t bg-background shrink-0">
@@ -652,6 +700,8 @@ export function ChatInput({
         );
     }
     
+    // This is the main return statement for the ChatInput component.
+    // It renders the input field and all its associated buttons and popups.
     return (
         <div className="p-2 border-t bg-background shrink-0">
             <input type="file" ref={attachmentInputRef} onChange={handleFileSelect} className="hidden" />
@@ -670,6 +720,7 @@ export function ChatInput({
                 </DialogContent>
             </Dialog>
 
+            {/* These are the "replying to" and "editing" banners that appear above the input. */}
             {replyingTo && (
                 <div className="flex items-center justify-between p-2 pl-3 mb-2 rounded-t-md bg-muted text-sm border-b">
                     <div>
@@ -686,6 +737,7 @@ export function ChatInput({
                 </div>
             )}
             <div className="relative">
+               {/* The pop-up toolbars for text formatting and @mentions. */}
                {toolbarPosition && selection && (
                     <div
                         ref={toolbarRef}
@@ -731,6 +783,7 @@ export function ChatInput({
                         </ScrollArea>
                     </Card>
                 )}
+                {/* The main text input area. */}
               <TextareaAutosize
                 ref={textareaRef}
                 placeholder={isGroup ? "Type @ to mention users..." : "Type a message..."}
@@ -744,6 +797,7 @@ export function ChatInput({
                 onBlur={() => { setTimeout(() => { if (!toolbarRef.current?.contains(document.activeElement)) { setSelection(null); setToolbarPosition(null); } }, 150); }}
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+                {/* The emoji picker and other action buttons. */}
                 <Popover open={isEmojiOpen} onOpenChange={setIsEmojiOpen}>
                     <PopoverTrigger asChild>
                         <Button variant="ghost" size="icon"><Smile className="h-5 w-5"/></Button>

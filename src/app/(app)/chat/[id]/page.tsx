@@ -20,6 +20,9 @@ function ChatPageLoading() {
   )
 }
 
+// This is a constant string used in our Supabase database queries.
+// It tells the database exactly which columns we want to fetch for a message,
+// including related data like the sender's profile and the message being replied to.
 const FULL_MESSAGE_SELECT_QUERY = `
     *, 
     read_by,
@@ -41,15 +44,20 @@ export default function ChatPage() {
     chats,
   } = useAppContext()
   
+  // This state variable holds the list of messages for the current chat.
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const topMessageSentinelRef = useRef<HTMLDivElement>(null)
 
+  // `useMemo` is a performance hook. It only recalculates the chat object
+  // when the `chats` array or the `chatId` changes.
   const chat = useMemo(() => chats.find((c) => c.id === chatId), [chats, chatId])
   const initialUnreadCount = useMemo(() => chat?.unreadCount || 0, [chat])
 
+  // `useCallback` is another performance hook that memoizes the function itself.
+  // This function fetches the initial batch of messages for the chat.
   const fetchMessages = useCallback(async () => {
     setIsLoading(true)
     const { data, error } = await supabase
@@ -67,17 +75,20 @@ export default function ChatPage() {
     setIsLoading(false);
   }, [chatId, supabase]);
 
+  // This `useEffect` hook triggers the initial message fetch when the component is ready.
   useEffect(() => {
     if (isAppReady && loggedInUser?.id && chatId) {
       fetchMessages();
     }
   }, [chatId, isAppReady, loggedInUser?.id, fetchMessages])
 
+  // This hook marks messages as read when the chat is opened or the window is focused.
   useEffect(() => {
     if (chatId && loggedInUser?.id) {
       const markAsRead = async () => {
         resetUnreadCount(chatId)
-        // RPC call to a database function to mark all messages in the chat as read for the user.
+        // This is a remote procedure call (RPC) to a custom database function
+        // that efficiently marks all messages in the chat as read for the current user.
         await supabase.rpc('mark_messages_as_read', { p_chat_id: chatId, p_user_id: loggedInUser.id });
       }
       markAsRead()
@@ -86,8 +97,13 @@ export default function ChatPage() {
     }
   }, [chatId, loggedInUser?.id, resetUnreadCount, supabase])
   
+  // *** THIS IS THE CORE OF THE REAL-TIME FIX ***
+  // This `useEffect` hook sets up the real-time subscription for the current chat.
   useEffect(() => {
+    // This function will be called every time a new message is inserted into the database.
     const handleNewMessage = async (payload: any) => {
+        // The payload only contains the basic new message. We need to fetch the full
+        // message details (like the sender's profile) to display it correctly.
         const { data: fullMessage, error } = await supabase
           .from("messages")
           .select(FULL_MESSAGE_SELECT_QUERY)
@@ -96,6 +112,8 @@ export default function ChatPage() {
         
         if (error || !fullMessage) return;
 
+        // We update our local `messages` state by adding the new message to the end.
+        // We also check to make sure we don't accidentally add a duplicate message.
         setMessages(currentMessages => {
             if (currentMessages.some(m => m.id === fullMessage.id)) {
                 return currentMessages;
@@ -104,6 +122,7 @@ export default function ChatPage() {
         });
     }
 
+    // This function handles real-time updates for edited messages.
     const handleUpdatedMessage = async (payload: any) => {
         const { data: fullMessage, error } = await supabase
           .from("messages")
@@ -113,9 +132,12 @@ export default function ChatPage() {
         
         if (error || !fullMessage) return;
         
+        // We find the message in our local state and replace it with the updated version.
         setMessages(current => current.map(m => m.id === payload.new.id ? fullMessage as Message : m));
     }
 
+    // Here, we subscribe to the Supabase channel for our specific chat.
+    // We listen for both 'INSERT' (new messages) and 'UPDATE' (edited messages) events.
     const channel = supabase
       .channel(`chat-${chatId}`)
       .on('postgres_changes', {
@@ -132,6 +154,8 @@ export default function ChatPage() {
        }, handleUpdatedMessage)
       .subscribe();
 
+    // The cleanup function is crucial. It unsubscribes from the channel when the user
+    // navigates away from this chat, preventing memory leaks and unnecessary background updates.
     return () => {
       supabase.removeChannel(channel);
     }
@@ -146,6 +170,7 @@ export default function ChatPage() {
     notFound()
   }
 
+  // Finally, we render the main ChatUI component, passing down all the necessary data and state.
   return (
     <ChatUI
       chat={{ ...chat, messages }}
