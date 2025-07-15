@@ -76,13 +76,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     try {
         let profile: User | null = null;
-        // Poll for the profile to handle replication delay after signup trigger
         for (let i = 0; i < 5; i++) {
-          const { data } = await supabaseRef.current
+          const { data, error } = await supabaseRef.current
             .from("profiles")
-            .select("*, theme_settings")
+            .select("*")
             .eq("id", user.id)
             .single();
+          if (error && error.code !== 'PGRST116') throw error;
           if (data) {
             profile = data as User;
             break;
@@ -95,8 +95,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         
         const fullUserProfile = { ...profile, email: user.email } as User;
-        if (fullUserProfile.theme_settings) {
-            setThemeSettingsState(prev => ({ ...prev, ...fullUserProfile.theme_settings }));
+        const savedTheme = localStorage.getItem('themeSettings');
+        if (savedTheme) {
+          setThemeSettingsState(JSON.parse(savedTheme));
         }
         setLoggedInUser(fullUserProfile);
 
@@ -156,6 +157,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const { data: authListener } = supabaseRef.current.auth.onAuthStateChange((event, session) => {
         setSession(session)
         if (event === "SIGNED_OUT") {
+            router.push('/login');
             resetState();
         } else if (event === "SIGNED_IN" && session?.user) {
             fetchInitialData(session.user)
@@ -168,7 +170,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
         authListener.subscription.unsubscribe();
     };
-  }, [fetchInitialData, resetState]);
+  }, [fetchInitialData, resetState, router]);
 
 
   const handleNewMessage = useCallback(
@@ -259,18 +261,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setThemeSettings = useCallback(async (newSettings: Partial<ThemeSettings>) => {
     if (!loggedInUser) return;
-    const oldSettings = themeSettings;
     const updatedSettings = { ...themeSettings, ...newSettings };
     setThemeSettingsState(updatedSettings);
-
-    try {
-        const { error } = await supabaseRef.current.from('profiles').update({ theme_settings: updatedSettings }).eq('id', loggedInUser.id);
-        if (error) throw error;
-        setLoggedInUser(prev => prev ? { ...prev, theme_settings: updatedSettings } : null);
-    } catch (error: any) {
-        toast({ variant: 'destructive', title: 'Error saving settings' });
-        setThemeSettingsState(oldSettings);
-    }
+    localStorage.setItem('themeSettings', JSON.stringify(updatedSettings));
+    toast({ title: 'Theme settings updated locally.' });
   }, [loggedInUser, themeSettings, toast]);
 
   const addChat = useCallback((newChat: Chat) => {

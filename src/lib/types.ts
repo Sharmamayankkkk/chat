@@ -11,7 +11,6 @@ export type User = {
   bio?: string;
   role?: 'user' | 'admin' | 'gurudev';
   is_admin: boolean;
-  theme_settings?: ThemeSettings | null;
 };
 
 export type Reaction = {
@@ -142,7 +141,7 @@ export type Event = {
   meet_link?: string;
   rsvps: EventRSVP[];
   profiles?: User; // Joined creator profile
-  status: 'active' | 'cancelled' | 'completed';
+  status: 'active' | 'cancelled';
   is_deleted: boolean;
 };
 
@@ -166,5 +165,3 @@ export interface AppContextType {
   isReady: boolean
   resetUnreadCount: (chatId: number) => void
 }
-
-    
