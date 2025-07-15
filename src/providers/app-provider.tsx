@@ -77,21 +77,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     try {
         let profile: User | null = null;
-        let profileError: any = null;
+        let lastError: any = null;
 
         // Add a retry mechanism to handle potential replication delay
         for (let attempt = 1; attempt <= 3; attempt++) {
             const { data, error } = await supabaseRef.current.from("profiles").select("*, theme_settings").eq("id", user.id).single();
             if (data) {
                 profile = data as User;
+                lastError = null;
                 break;
             }
-            profileError = error;
+            lastError = error;
+            // Only retry if no data is found, which can happen during replication lag.
+            // If there's a specific database error, we probably don't want to retry.
+            if (error && error.code !== 'PGRST116') { // PGRST116 is "Not a single row was found"
+                break;
+            }
             await new Promise(res => setTimeout(res, 300 * attempt));
         }
 
-        if (profileError || !profile) {
-            console.error("Failed to fetch profile after multiple attempts:", profileError)
+        if (!profile) {
+            console.error("Failed to fetch profile after multiple attempts:", lastError);
             throw new Error("Could not fetch user profile. Please try logging in again.");
         }
         
