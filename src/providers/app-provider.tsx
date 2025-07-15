@@ -71,34 +71,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const fetchInitialData = useCallback(async (user: AuthUser) => {
-    // Prevent re-fetching if data is already loaded for this session
     if (dataLoadedForSession.current === user.id) return;
+    dataLoadedForSession.current = user.id;
 
     try {
         let profile: User | null = null;
-        // Poll for the profile to handle replication delay after signup
         for (let i = 0; i < 5; i++) {
           const { data, error } = await supabaseRef.current
             .from("profiles")
             .select("*")
             .eq("id", user.id)
             .single();
-            
-          if (error && error.code !== 'PGRST116') throw error; // Don't retry on actual errors
+          
+          if (error && error.code !== 'PGRST116') throw error;
           
           if (data) {
             profile = data as User;
             break;
           }
-          await new Promise(res => setTimeout(res, 300)); // Wait before retrying
+          await new Promise(res => setTimeout(res, 300 * (i + 1)));
         }
 
         if (!profile) {
             console.error("Failed to fetch profile after multiple attempts.");
             throw new Error("Could not fetch user profile. Please try logging in again.");
         }
-        
-        dataLoadedForSession.current = user.id; // Mark data as loaded for this session
         
         const fullUserProfile = { ...profile, email: user.email } as User;
         const savedTheme = localStorage.getItem('themeSettings');
@@ -162,14 +159,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
         setSession(session);
-        if (event === "SIGNED_OUT") {
+        if (event === "SIGNED_IN") {
+            if (session?.user) {
+                await fetchInitialData(session.user);
+            }
+        } else if (event === "SIGNED_OUT") {
             router.push('/login');
             resetState();
-        } else if (session?.user) {
-            await fetchInitialData(session.user);
         }
         
-        // This ensures the loading screen is removed only after the first check
         if (!isReady) {
           setIsReady(true);
         }
@@ -229,7 +227,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [loggedInUser, pathname, allUsers, router]
+    [loggedInUser, pathname, allUsers]
   );
 
   useEffect(() => {
@@ -238,19 +236,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     const channels = [
-      supabaseRef.current.channel('public:messages')
+      supabaseRef.current.channel('public-messages-notifications')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => handleNewMessage(payload as any)),
       supabaseRef.current.channel('participants-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, () => {
-          if (session) fetchInitialData(session.user)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, async () => {
+          if (session) await fetchInitialData(session.user)
         }),
       supabaseRef.current.channel('dm-requests-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, () => {
-          if (session) fetchInitialData(session.user)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, async () => {
+          if (session) await fetchInitialData(session.user)
         }),
       supabaseRef.current.channel('blocked-users-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, () => {
-          if (session) fetchInitialData(session.user)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, async () => {
+          if (session) await fetchInitialData(session.user)
         }),
       supabaseRef.current.channel('public:chats')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chats' }, payload => {
@@ -385,5 +383,3 @@ export function useAppContext() {
   }
   return context
 }
-
-    
