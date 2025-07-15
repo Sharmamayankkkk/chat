@@ -935,9 +935,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
           <AvatarFallback>{senderFallback}</AvatarFallback>
           </Avatar>
       )}
-      <div {...swipeHandlers} className={cn("relative transition-transform duration-200 ease-out max-w-[85%] sm:max-w-[70%] md:max-w-[60%]", isMyMessage ? "group-data-[swiped=true]/message:translate-x-[-2rem]" : "group-data-[swiped=true]/message:translate-x-[2rem]")}>
+      <div {...swipeHandlers} className={cn("relative transition-transform duration-200 ease-out min-w-0", isMyMessage ? "group-data-[swiped=true]/message:translate-x-[-2rem]" : "group-data-[swiped=true]/message:translate-x-[2rem]")}>
           <div 
-              className={cn("group/bubble relative rounded-lg text-sm px-2 sm:px-3 py-2 break-words")}
+              className={cn("group/bubble relative rounded-lg text-sm px-2 sm:px-3 py-2 break-words max-w-[80vw] sm:max-w-md md:max-w-lg")}
               style={bubbleStyle}
           >
               {isEditing ? (
