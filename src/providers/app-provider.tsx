@@ -75,14 +75,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dataLoadedForSession.current = user.id
 
     try {
-        const { data: profile, error: profileError } = await supabaseRef.current
+        let profile: User | null = null;
+        // Poll for the profile to handle replication delay after signup trigger
+        for (let i = 0; i < 5; i++) {
+          const { data } = await supabaseRef.current
             .from("profiles")
             .select("*, theme_settings")
             .eq("id", user.id)
             .single();
+          if (data) {
+            profile = data as User;
+            break;
+          }
+          await new Promise(res => setTimeout(res, 300));
+        }
 
-        if (profileError || !profile) {
-            console.error("Failed to fetch profile:", profileError);
+        if (!profile) {
             throw new Error("Could not fetch user profile. Please try logging in again.");
         }
         
