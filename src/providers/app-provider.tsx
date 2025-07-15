@@ -71,33 +71,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const fetchInitialData = useCallback(async (user: AuthUser) => {
-    // Prevent re-fetching data for the same session
     if (dataLoadedForSession.current === user.id) return;
     dataLoadedForSession.current = user.id
 
     try {
-        let profile: User | null = null;
-        let lastError: any = null;
+        const { data: profile, error: profileError } = await supabaseRef.current
+            .from("profiles")
+            .select("*, theme_settings")
+            .eq("id", user.id)
+            .single();
 
-        // Add a retry mechanism to handle potential replication delay
-        for (let attempt = 1; attempt <= 3; attempt++) {
-            const { data, error } = await supabaseRef.current.from("profiles").select("*, theme_settings").eq("id", user.id).single();
-            if (data) {
-                profile = data as User;
-                lastError = null;
-                break;
-            }
-            lastError = error;
-            // Only retry if no data is found, which can happen during replication lag.
-            // If there's a specific database error, we probably don't want to retry.
-            if (error && error.code !== 'PGRST116') { // PGRST116 is "Not a single row was found"
-                break;
-            }
-            await new Promise(res => setTimeout(res, 300 * attempt));
-        }
-
-        if (!profile) {
-            console.error("Failed to fetch profile after multiple attempts:", lastError);
+        if (profileError || !profile) {
+            console.error("Failed to fetch profile:", profileError);
             throw new Error("Could not fetch user profile. Please try logging in again.");
         }
         
@@ -162,11 +147,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // This effect handles authentication state changes.
   useEffect(() => {
     const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
-        setSession(session)
-        if (session?.user) {
+        setSession(session);
+        if (event === "SIGNED_IN" && session?.user) {
             // Add a small delay to allow for db replication after signup
-            setTimeout(() => fetchInitialData(session.user), 100);
-        } else {
+            setTimeout(() => fetchInitialData(session.user), 500);
+        } else if (event === "SIGNED_OUT") {
             resetState();
         }
         setIsReady(true);
