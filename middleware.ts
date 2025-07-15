@@ -33,24 +33,15 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // Define public routes that don't require authentication
-  const publicRoutes = [
-    '/login', 
-    '/signup', 
-    '/forgot-password', 
-    '/update-password', 
-    '/auth/callback',
-    '/sitemap.xml'
-  ];
-
+  const publicRoutes = ['/login', '/signup', '/forgot-password', '/update-password', '/auth/callback', '/sitemap.xml'];
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
 
-  // Allow access to public and API routes
-  if (isPublicRoute || pathname.startsWith('/api')) {
+  // Allow access to public routes, API routes, and join links
+  if (isPublicRoute || pathname.startsWith('/api') || pathname.startsWith('/join/')) {
     return response;
   }
   
-  // Redirect to login if no session and trying to access a protected route
+  // If no session, redirect to login for all other routes
   if (!session) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
@@ -58,25 +49,23 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // If user is logged in, check if their profile is complete
-  if (session) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('username')
-      .eq('id', session.user.id)
-      .single();
+  // If we have a session, handle profile completion and redirects
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('username')
+    .eq('id', session.user.id)
+    .single();
 
-    const isProfileComplete = profile && profile.username;
-    
-    // Redirect to complete profile if needed
-    if (!isProfileComplete && pathname !== '/complete-profile') {
-      return NextResponse.redirect(new URL('/complete-profile', request.url));
-    }
-    
-    // If profile is complete, redirect from auth pages to chat
-    if (isProfileComplete && (pathname === '/login' || pathname === '/signup' || pathname === '/complete-profile')) {
-      return NextResponse.redirect(new URL('/chat', request.url));
-    }
+  const isProfileComplete = profile && profile.username;
+  
+  // If profile is not complete, force redirect to complete-profile
+  if (!isProfileComplete && pathname !== '/complete-profile') {
+    return NextResponse.redirect(new URL('/complete-profile', request.url));
+  }
+  
+  // If profile is complete, redirect from auth pages to the main app
+  if (isProfileComplete && (pathname === '/login' || pathname === '/signup' || pathname === '/complete-profile')) {
+    return NextResponse.redirect(new URL('/chat', request.url));
   }
 
   return response
@@ -89,7 +78,10 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
+     * - and files with common image/asset extensions
      */
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 }
+
+    

@@ -1,5 +1,6 @@
 
 
+
 // Matches public.profiles table
 export type User = {
   id: string; // uuid
@@ -161,7 +162,9 @@ export interface AppContextType {
   reportUser: (reportedUserId: string, reason: string, messageId?: number) => Promise<void>
   forwardMessage: (message: Message, chatIds: number[]) => Promise<void>
   themeSettings: ThemeSettings
-  setThemeSettings: (newSettings: Partial<ThemeSettings>) => Promise<void>
+  setThemeSettings: (newSettings: Partial<ThemeSettings>) => void
   isReady: boolean
   resetUnreadCount: (chatId: number) => void
 }
+
+    

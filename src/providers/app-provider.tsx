@@ -71,28 +71,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const fetchInitialData = useCallback(async (user: AuthUser) => {
+    // Prevent re-fetching if data is already loaded for this session
     if (dataLoadedForSession.current === user.id) return;
-    dataLoadedForSession.current = user.id
 
     try {
         let profile: User | null = null;
+        // Poll for the profile to handle replication delay after signup
         for (let i = 0; i < 5; i++) {
           const { data, error } = await supabaseRef.current
             .from("profiles")
             .select("*")
             .eq("id", user.id)
             .single();
-          if (error && error.code !== 'PGRST116') throw error;
+            
+          if (error && error.code !== 'PGRST116') throw error; // Don't retry on actual errors
+          
           if (data) {
             profile = data as User;
             break;
           }
-          await new Promise(res => setTimeout(res, 300));
+          await new Promise(res => setTimeout(res, 300)); // Wait before retrying
         }
 
         if (!profile) {
+            console.error("Failed to fetch profile after multiple attempts.");
             throw new Error("Could not fetch user profile. Please try logging in again.");
         }
+        
+        dataLoadedForSession.current = user.id; // Mark data as loaded for this session
         
         const fullUserProfile = { ...profile, email: user.email } as User;
         const savedTheme = localStorage.getItem('themeSettings');
@@ -154,23 +160,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [toast, requestNotificationPermission]);
   
   useEffect(() => {
-    const { data: authListener } = supabaseRef.current.auth.onAuthStateChange((event, session) => {
-        setSession(session)
+    const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
+        setSession(session);
         if (event === "SIGNED_OUT") {
             router.push('/login');
             resetState();
-        } else if (event === "SIGNED_IN" && session?.user) {
-            fetchInitialData(session.user)
-        } else if (event === "INITIAL_SESSION" && session?.user) {
-            fetchInitialData(session.user);
+        } else if (session?.user) {
+            await fetchInitialData(session.user);
         }
-        setIsReady(true)
+        
+        // This ensures the loading screen is removed only after the first check
+        if (!isReady) {
+          setIsReady(true);
+        }
     });
 
     return () => {
         authListener.subscription.unsubscribe();
     };
-  }, [fetchInitialData, resetState, router]);
+  }, [fetchInitialData, resetState, router, isReady]);
 
 
   const handleNewMessage = useCallback(
@@ -377,3 +385,5 @@ export function useAppContext() {
   }
   return context
 }
+
+    
