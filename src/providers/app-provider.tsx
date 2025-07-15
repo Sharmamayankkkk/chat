@@ -6,7 +6,7 @@ import type { User, Chat, ThemeSettings, Message, DmRequest, AppContextType } fr
 import { createClient } from "@/lib/utils"
 import { Icons } from "@/components/icons"
 import { useToast } from "@/hooks/use-toast"
-import type { Session, RealtimePostgresChangesPayload } from "@supabase/supabase-js"
+import type { Session, RealtimePostgresChangesPayload, User as AuthUser } from "@supabase/supabase-js"
 import { usePathname, useRouter } from "next/navigation"
 
 const AppContext = createContext<AppContextType | undefined>(undefined)
@@ -51,25 +51,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast()
   const router = useRouter()
   const pathname = usePathname()
-  const initialDataLoaded = useRef(false);
+  const dataLoadedForSession = useRef<string | null>(null)
 
   const requestNotificationPermission = useCallback(async () => {
     if ("Notification" in window && Notification.permission === "default") {
       await Notification.requestPermission()
     }
-  }, []);
+  }, [])
+  
+  const resetState = useCallback(() => {
+    setLoggedInUser(null)
+    setChats([])
+    setAllUsers([])
+    setDmRequests([])
+    setBlockedUsers([])
+    dataLoadedForSession.current = null
+    subscriptionsRef.current.forEach(sub => sub.unsubscribe())
+    subscriptionsRef.current = []
+  }, [])
 
-  const fetchInitialData = useCallback(async (currentSession: Session) => {
-    if (initialDataLoaded.current) return;
-    initialDataLoaded.current = true;
-    
+  const fetchInitialData = useCallback(async (user: AuthUser) => {
+    // Prevent re-fetching data for the same session
+    if (dataLoadedForSession.current === user.id) return;
+    dataLoadedForSession.current = user.id
+
     try {
-        const { user } = currentSession;
-
         const { data: profile, error: profileError } = await supabaseRef.current.from("profiles").select("*, theme_settings").eq("id", user.id).single();
 
         if (profileError || !profile) {
-            throw new Error("Could not fetch user profile. Please sign out and sign in again.");
+            throw new Error("Could not fetch user profile. Please try logging in again.");
         }
         const fullUserProfile = { ...profile, email: user.email } as User;
         if (fullUserProfile.theme_settings) {
@@ -129,37 +139,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [toast, requestNotificationPermission]);
   
-  // This effect runs once on mount to check the initial session.
+  // This effect handles authentication state changes.
   useEffect(() => {
-    supabaseRef.current.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session)
-      if (session) {
-        await fetchInitialData(session)
-      }
-      setIsReady(true)
-    })
-
-    const { data: { subscription } } = supabaseRef.current.auth.onAuthStateChange(
-      (event, session) => {
+    const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
         setSession(session)
-        // On sign out, clear all user data
-        if (event === "SIGNED_OUT") {
-          setLoggedInUser(null)
-          setChats([])
-          setAllUsers([])
-          setDmRequests([])
-          setBlockedUsers([])
-          initialDataLoaded.current = false
+        if (session?.user) {
+            await fetchInitialData(session.user);
+        } else {
+            resetState();
         }
-        // On sign in, a page refresh will be triggered by the auth callback,
-        // which will re-run the getSession() logic above for a clean state.
-      }
-    )
+        setIsReady(true);
+    });
 
     return () => {
-      subscription?.unsubscribe()
-    }
-  }, [fetchInitialData])
+        authListener.subscription.unsubscribe();
+    };
+  }, [fetchInitialData, resetState]);
 
 
   const handleNewMessage = useCallback(
@@ -195,14 +190,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (shouldShowNotification) {
         const sender = allUsers.find((u) => u.id === newMessage.user_id);
         if (sender) {
-          const title = sender.name || "New Message";
-          const body = newMessage.content || (newMessage.attachment_metadata?.name ? `Sent: ${newMessage.attachment_metadata.name}` : "Sent an attachment");
-          
           if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
             navigator.serviceWorker.getRegistration().then(reg => {
               if (reg) {
-                reg.showNotification(title, {
-                  body: body,
+                reg.showNotification(sender.name, {
+                  body: newMessage.content || (newMessage.attachment_metadata?.name ? `Sent: ${newMessage.attachment_metadata.name}` : "Sent an attachment"),
                   icon: sender.avatar_url || "/logo/light_KCS.png",
                   tag: `chat-${newMessage.chat_id}`,
                   data: { chatId: newMessage.chat_id }
@@ -217,33 +209,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    if (!loggedInUser || !session) {
-      if(subscriptionsRef.current.length > 0) {
-        subscriptionsRef.current.forEach((sub) => sub.unsubscribe());
-        subscriptionsRef.current = [];
-      }
+    if (!loggedInUser || subscriptionsRef.current.length > 0) {
       return;
     }
-    
-    if (subscriptionsRef.current.length > 0) return;
 
     const channels = [
       supabaseRef.current.channel('public:messages')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => handleNewMessage(payload as any)),
       supabaseRef.current.channel('participants-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, () => {
-          initialDataLoaded.current = false;
-          fetchInitialData(session)
+          if (session) fetchInitialData(session.user)
         }),
       supabaseRef.current.channel('dm-requests-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, () => {
-          initialDataLoaded.current = false;
-          fetchInitialData(session)
+          if (session) fetchInitialData(session.user)
         }),
       supabaseRef.current.channel('blocked-users-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, () => {
-          initialDataLoaded.current = false;
-          fetchInitialData(session)
+          if (session) fetchInitialData(session.user)
         }),
       supabaseRef.current.channel('public:chats')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chats' }, payload => {
