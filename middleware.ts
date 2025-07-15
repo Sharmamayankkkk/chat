@@ -1,8 +1,13 @@
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+
+import { createServerClient, type CookieOptions } from "@supabase/ssr"
+import { NextResponse, type NextRequest } from "next/server"
 
 export async function middleware(request: NextRequest) {
-  const res = NextResponse.next();
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,57 +15,81 @@ export async function middleware(request: NextRequest) {
     {
       cookies: {
         get(name: string) {
-          return request.cookies.get(name)?.value;
+          return request.cookies.get(name)?.value
         },
         set(name: string, value: string, options: CookieOptions) {
-          res.cookies.set(name, value, options);
+          response.cookies.set({ name, value, ...options })
         },
         remove(name: string, options: CookieOptions) {
-          res.cookies.set(name, "", { ...options, maxAge: -1 });
+          response.cookies.set({ name, value: "", ...options })
         },
       },
     }
-  );
+  )
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession()
 
-  const { pathname, origin, searchParams } = request.nextUrl;
+  const { pathname } = request.nextUrl
 
+  // Define public routes that don't require authentication
   const publicRoutes = [
-    "/login",
-    "/signup",
-    "/forgot-password",
-    "/update-password",
-    "/auth/callback",
+    '/login', 
+    '/signup', 
+    '/forgot-password', 
+    '/update-password', 
+    '/auth/callback',
+    '/sitemap.xml'
   ];
-  const authRoutes = ["/login", "/signup"];
 
-  const isPublicRoute = publicRoutes.some((route) =>
-    pathname.startsWith(route)
-  );
-  const isAuthRoute = authRoutes.some((route) =>
-    pathname.startsWith(route)
-  );
+  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
 
-  // Unauthenticated user trying to access a protected route
-  if (!user && !isPublicRoute) {
-    const redirectUrl = new URL("/login", origin);
-    redirectUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(redirectUrl);
+  // Allow access to public and API routes
+  if (isPublicRoute || pathname.startsWith('/api')) {
+    return response;
+  }
+  
+  // Redirect to login if no session and trying to access a protected route
+  if (!session) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.searchParams.set('next', pathname) // Save the intended destination
+    return NextResponse.redirect(url)
   }
 
-  // Authenticated user trying to access auth route
-  if (user && isAuthRoute) {
-    return NextResponse.redirect(new URL("/chat", origin));
+  // If user is logged in, check if their profile is complete
+  if (session) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', session.user.id)
+      .single();
+
+    const isProfileComplete = profile && profile.username;
+    
+    // Redirect to complete profile if needed
+    if (!isProfileComplete && pathname !== '/complete-profile') {
+      return NextResponse.redirect(new URL('/complete-profile', request.url));
+    }
+    
+    // If profile is complete, redirect from auth pages to chat
+    if (isProfileComplete && (pathname === '/login' || pathname === '/signup' || pathname === '/complete-profile')) {
+      return NextResponse.redirect(new URL('/chat', request.url));
+    }
   }
 
-  return res;
+  return response
 }
 
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     */
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
-};
+}
