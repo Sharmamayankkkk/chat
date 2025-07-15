@@ -24,8 +24,7 @@ function ChatPageLoading() {
 // It tells the database exactly which columns we want to fetch for a message,
 // including related data like the sender's profile and the message being replied to.
 const FULL_MESSAGE_SELECT_QUERY = `
-    *, 
-    read_by,
+    id, created_at, chat_id, user_id, content, attachment_url, attachment_metadata, is_edited, reactions, read_by, is_pinned, is_starred, reply_to_message_id, 
     profiles!user_id(*), 
     replied_to_message:reply_to_message_id(*, profiles!user_id(*))
 `;
