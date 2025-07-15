@@ -28,32 +28,29 @@ export async function middleware(request: NextRequest) {
   )
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    data: { session },
+  } = await supabase.auth.getSession()
 
   const { pathname } = request.nextUrl
-  
-  const publicRoutes = ['/login', '/signup', '/forgot-password', '/update-password', '/auth/callback', '/complete-profile'];
+
+  // These are routes that can be accessed without a full session
+  const publicRoutes = ['/login', '/signup', '/forgot-password', '/update-password', '/auth/callback'];
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
 
   if (pathname.startsWith('/join/')) {
     return response;
   }
+  
+  // If the user is logged in
+  if (session) {
+    // If the user is on the update password page, but not in recovery mode, redirect them.
+    if (pathname === '/update-password' && session.user.user_metadata.recovery !== true) {
+      return NextResponse.redirect(new URL('/settings', request.url))
+    }
 
-  // If the user is not logged in and the route is not public, redirect to login
-  if (!user && !isPublicRoute) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    url.searchParams.set('next', pathname)
-    return NextResponse.redirect(url)
-  }
-
-  // If the user is logged in, check if their profile is complete
-  if (user) {
-    const { data: profile } = await supabase.from('profiles').select('username').eq('id', user.id).single();
-    
+    const { data: profile } = await supabase.from('profiles').select('username').eq('id', session.user.id).single();
     const isProfileComplete = profile && profile.username;
-    
+
     // If profile is incomplete, redirect to the completion page, unless they are already there.
     if (!isProfileComplete && pathname !== '/complete-profile') {
       return NextResponse.redirect(new URL('/complete-profile', request.url));
@@ -66,9 +63,16 @@ export async function middleware(request: NextRequest) {
 
     // If the user is logged in and tries to access login/signup, redirect to chat
     const authRoutes = ['/login', '/signup'];
-    const isAuthRoute = authRoutes.some(route => pathname.startsWith(route));
-    if (isAuthRoute) {
+    if (authRoutes.some(route => pathname.startsWith(route))) {
       return NextResponse.redirect(new URL('/chat', request.url))
+    }
+  } else {
+    // If the user is not logged in and the route is not public, redirect to login
+    if (!isPublicRoute) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      url.searchParams.set('next', pathname)
+      return NextResponse.redirect(url)
     }
   }
 

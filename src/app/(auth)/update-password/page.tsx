@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Icons } from "@/components/icons"
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { createClient } from "@/lib/utils"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, CheckCircle, Eye, EyeOff, Loader2 } from "lucide-react"
@@ -21,7 +21,22 @@ export default function UpdatePasswordPage() {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [sessionChecked, setSessionChecked] = useState(false);
   const supabase = createClient()
+  
+  useEffect(() => {
+    // This effect runs once to check if we are in a recovery session.
+    // If not, it redirects the user away.
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) {
+         router.replace("/login?error=Invalid or expired password reset link.");
+      } else {
+         setSessionChecked(true);
+      }
+    };
+    checkSession();
+  }, [router, supabase]);
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -60,6 +75,14 @@ export default function UpdatePasswordPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (!sessionChecked) {
+    return (
+        <div className="flex h-screen w-full items-center justify-center bg-background">
+            <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+    )
   }
 
   return (
