@@ -35,6 +35,18 @@ const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
+  <url>
+    <loc>${URL}/terms-and-conditions</loc>
+    <lastmod>${new Date().toISOString()}</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>${URL}/privacy-policy</loc>
+    <lastmod>${new Date().toISOString()}</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
 </urlset>`;
 
 export async function GET() {

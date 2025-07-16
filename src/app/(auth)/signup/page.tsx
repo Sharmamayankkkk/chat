@@ -7,6 +7,7 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -198,6 +199,19 @@ export default function SignupPage() {
           </Link>
         </div>
       </CardContent>
+      <CardFooter className="text-center text-xs text-muted-foreground">
+        <p>
+          By creating an account, you agree to our{' '}
+          <Link href="/terms-and-conditions" className="underline hover:text-primary">
+            Terms & Conditions
+          </Link>{' '}
+          and{' '}
+          <Link href="/privacy-policy" className="underline hover:text-primary">
+            Privacy Policy
+          </Link>
+          .
+        </p>
+      </CardFooter>
     </Card>
   );
 }

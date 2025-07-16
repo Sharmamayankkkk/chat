@@ -33,15 +33,25 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  const publicRoutes = ['/login', '/signup', '/forgot-password', '/update-password', '/auth/callback', '/sitemap.xml'];
+  // Define public routes that don't require authentication
+  const publicRoutes = [
+    '/login', 
+    '/signup', 
+    '/forgot-password', 
+    '/update-password', 
+    '/auth/callback',
+    '/terms-and-conditions',
+    '/privacy-policy',
+    '/sitemap.xml'
+  ];
+  
+  // Check if the current path is a public route or an API/join route
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
-
-  // Allow access to public routes, API routes, and join links
   if (isPublicRoute || pathname.startsWith('/api') || pathname.startsWith('/join/')) {
     return response;
   }
   
-  // If no session, redirect to login for all other routes
+  // If there's no session, redirect unauthenticated users to the login page
   if (!session) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
@@ -49,7 +59,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // If we have a session, handle profile completion and redirects
+  // If there is a session, handle profile completion and other redirects
   const { data: profile } = await supabase
     .from('profiles')
     .select('username')
@@ -58,12 +68,12 @@ export async function middleware(request: NextRequest) {
 
   const isProfileComplete = profile && profile.username;
   
-  // If profile is not complete, force redirect to complete-profile
+  // If profile is not complete, force redirect to complete-profile page
   if (!isProfileComplete && pathname !== '/complete-profile') {
     return NextResponse.redirect(new URL('/complete-profile', request.url));
   }
   
-  // If profile is complete, redirect from auth pages to the main app
+  // If profile is complete, redirect away from auth pages to the main app
   if (isProfileComplete && (pathname === '/login' || pathname === '/signup' || pathname === '/complete-profile')) {
     return NextResponse.redirect(new URL('/chat', request.url));
   }
@@ -83,5 +93,3 @@ export const config = {
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 }
-
-    
