@@ -7,7 +7,7 @@
   <p align="center">
     <i>Where Devotees Unite</i>
     <br />
-    A modern, real-time chat application for the conscious community.
+    A modern, real-time chat application for the conscious community, now powered by AI.
     <br />
     <a href="https://github.com/Sharmamayankkkk/krishna-connect/issues">Report Bug</a>
     ·
@@ -71,6 +71,7 @@ Krishna Connect is packed with features designed to create a vibrant and engagin
 This project is built with a modern, robust, and scalable tech stack:
 
 - **Framework**: [Next.js](https://nextjs.org/) (App Router)
+- **AI Toolkit**: [Genkit](https://firebase.google.com/docs/genkit) (for Generative AI features)
 - **UI Library**: [React](https://react.dev/)
 - **UI Components**: [ShadCN UI](https://ui.shadcn.com/)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/)
@@ -87,6 +88,7 @@ Follow these steps to get a local copy up and running for development and contri
 
 - [Node.js](https://nodejs.org/) (v18 or later recommended)
 - A [Supabase](https://supabase.com/) account.
+- A Google Cloud account with the Gemini API enabled.
 - [Vercel CLI](https://vercel.com/docs/cli) (optional, for deployment)
 
 ### 1. Clone the Repository
@@ -112,11 +114,15 @@ Create a file named `.env.local` in the root of your project. You can copy the e
 cp .env.example .env.local
 ```
 
-Then, fill in the values in `.env.local` with the credentials from your Supabase project:
+Then, fill in the values in `.env.local` with the credentials from your Supabase and Google Cloud projects:
 
 ```
+# Supabase
 NEXT_PUBLIC_SUPABASE_URL=YOUR_SUPABASE_PROJECT_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+
+# Google AI (Gemini)
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 ```
 
 ### 4. Install Dependencies and Run
@@ -127,11 +133,15 @@ Install the project dependencies using npm:
 npm install
 ```
 
-Now, run the development server:
-
-```bash
-npm run dev
-```
+Now, you need to run two processes in separate terminals:
+1.  **The main Next.js app:**
+    ```bash
+    npm run dev
+    ```
+2.  **The Genkit AI development server:**
+    ```bash
+    npm run genkit:dev
+    ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result. You're all set to start developing!
 
@@ -143,10 +153,10 @@ This project is optimized for deployment on [Vercel](https://vercel.com).
 
 1.  **Push to GitHub**: Make sure your code is pushed to a GitHub repository.
 2.  **Import Project on Vercel**: Import your repository into Vercel. It will automatically detect that you are using Next.js and configure the build settings.
-3.  **Add Environment Variables**: In your Vercel project settings (*Settings > Environment Variables*), add the `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` variables with the same values from your `.env.local` file.
+3.  **Add Environment Variables**: In your Vercel project settings (*Settings > Environment Variables*), add the `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `GEMINI_API_KEY` variables with the same values from your `.env.local` file.
 4.  **Deploy**: Vercel will build and deploy your application. Any push to the main branch will automatically trigger a new deployment.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSharmamayankkkk%2Fkrishna-connect&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY&project-name=krishna-connect&repo-name=krishna-connect)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSharmamayankkkk%2Fkrishna-connect&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,GEMINI_API_KEY&project-name=krishna-connect&repo-name=krishna-connect)
 
 ---
 

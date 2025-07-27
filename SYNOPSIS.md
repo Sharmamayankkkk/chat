@@ -22,7 +22,7 @@ The primary objectives of Krishna Connect are:
 - **To Enhance User Experience:** Deliver a beautiful, intuitive, and highly performant user interface that is both a joy to use and customizable to individual preferences.
 - **To Ensure a Safe & Sacred Space:** Implement features like moderated DM requests, user reporting, and admin controls to maintain a respectful and secure environment.
 - **To Support Community Activities:** Integrate features for organizing and managing events, from online lectures to local meetups.
-- **To Be Extensible:** Build upon a modern, scalable tech stack that allows for future feature development and community growth.
+- **To Be Extensible:** Build upon a modern, scalable tech stack that allows for future feature development and community growth, including Generative AI enhancements.
 
 ---
 
@@ -38,6 +38,7 @@ The scope of the project defines its boundaries, outlining what is included and 
 - **Customization:** Light/dark modes and customizable chat appearance (bubble colors, wallpapers).
 - **Community Management:** Admin panel for user management, DM request moderation, and group administration.
 - **Event System:** Creation, RSVP, and sharing of community events.
+- **AI Features:** Integration of Genkit for potential future AI-powered enhancements.
 
 #### **Out-of-Scope (for the current version):**
 - **Live Video/Audio Calls:** While planned for the future, real-time video/audio calling is not part of the initial scope.
@@ -51,7 +52,7 @@ The scope of the project defines its boundaries, outlining what is included and 
 The project follows an **Agile development methodology**, characterized by iterative development cycles.
 1.  **Requirement Gathering:** Features are defined based on the core needs of a spiritual community and inspired by best practices from modern chat applications.
 2.  **Design & Prototyping:** User interface and experience are designed using a component-based approach with ShadCN UI and Figma mockups.
-3.  **Development Sprints:** Development is broken down into small, manageable tasks. The front end (Next.js) and back end (Supabase) are developed in parallel.
+3.  **Development Sprints:** Development is broken down into small, manageable tasks. The front end (Next.js) and back end (Supabase, Genkit) are developed in parallel.
 4.  **Database-First Approach:** The database schema is designed first in Supabase, with security rules (RLS) being a primary consideration.
 5.  **Testing & QA:** Manual testing is performed at the end of each feature implementation to ensure functionality and identify bugs.
 6.  **Deployment:** The application is deployed on Vercel, leveraging its seamless integration with Next.js and serverless functions.
@@ -61,6 +62,7 @@ The project follows an **Agile development methodology**, characterized by itera
 
 ### **6. Tools & Technologies Used**
 - **Framework:** **Next.js 14** (App Router)
+- **AI Toolkit:** **Genkit** (for Generative AI)
 - **UI Library:** **React 18**
 - **UI Components:** **ShadCN UI**
 - **Styling:** **Tailwind CSS**
@@ -85,6 +87,7 @@ graph TD
 
     subgraph "Vercel"
         B[Next.js Frontend]
+        I[Genkit AI Serverless Functions]
     end
     
     subgraph "Supabase Cloud"
@@ -92,6 +95,10 @@ graph TD
         D[PostgreSQL Database]
         E[Realtime Engine]
         F[Storage]
+    end
+
+    subgraph "Google Cloud"
+        J[Gemini API]
     end
 
     subgraph "Third-Party OAuth"
@@ -104,6 +111,9 @@ graph TD
     B -- API Calls / SDK --> D
     B -- WebSocket Connection --> E
     B -- API Calls / SDK --> F
+    B -- API Calls --> I
+    
+    I -- API Call --> J
     
     C -- OAuth Handshake --> G
     C -- OAuth Handshake --> H
@@ -133,16 +143,7 @@ sequenceDiagram
 ---
 
 ### **8. Database Schema**
-*(This section is a placeholder for your database schema diagram or SQL code.)*
-
-**[INSERT DATABASE SCHEMA IMAGE HERE]**
-
-Alternatively, you can paste the contents of your `supabase/schema.sql` file below:
-
-```sql
--- PASTE YOUR supabase/schema.sql CONTENTS HERE --
-
-```
+*(The database schema is defined in the `supabase/schema.sql` file in the project repository.)*
 
 ---
 
@@ -165,12 +166,14 @@ Upon completion, the project will deliver:
   - Addition of rich media (images, files, voice notes).
   - Implementation of message replies, reactions, editing, and deleting.
   - UI/UX improvements, including theme customization.
-- **Phase 3: Community & Moderation (In Progress)**
+- **Phase 3: Community & Moderation (Completed)**
   - Development of the Events system.
   - Creation of the Admin Panel for user and DM request management.
   - Implementation of user blocking and reporting systems.
-- **Phase 4: Polish & Future Growth (Future)**
+- **Phase 4: AI & Final Polish (In Progress)**
+  - Integration of Genkit for AI features.
   - Performance optimization and bug fixing.
+- **Phase 5: Future Growth (Future)**
   - Exploration of native mobile app development.
   - Integration of real-time audio/video calls.
 

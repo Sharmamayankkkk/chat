@@ -8,21 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial project setup with Next.js, Supabase, and ShadCN UI.
-- Core real-time chat functionality (DMs and Groups).
-- User authentication (Email/Password, OAuth).
-- Rich media sharing (images, files, voice notes).
-- Message interactions (replies, reactions, editing, deleting).
-- Profile and settings management.
-- Events system with RSVP functionality.
-- Admin panel for user and DM request management.
+- **AI Integration**: Added Genkit and the Google AI plugin to support future Generative AI features.
+- `.env.example` file to simplify local environment setup.
+- **Stickers & Custom Emojis**: Added support for sending stickers and custom emojis in chat.
+- **Voice Notes**: Users can now record and send voice messages.
+- **Link Previews**: Shared links now automatically generate a rich preview card.
+- **Image Viewer**: Added a fullscreen image viewer with controls for zoom, rotation, and download.
+- **Group Info Page**: A dedicated page to view group details and manage members.
+- **User Profile Page**: View profiles of other users in the application.
 
 ### Changed
-- Refactored UI components for better performance and maintainability.
-- Improved real-time message handling.
-- Enhanced application stability and fixed session management issues.
+- **Refactored Authentication**: Overhauled the session management and data loading logic in `AppProvider` to fix race conditions and prevent infinite loading on page refresh. Now uses `supabase.auth.getUser()` for secure session validation.
+- **Improved UI/UX**: Ensured the sidebar can always be reopened on desktop and is available on all main app pages for better navigation.
+- **Optimized Real-time Subscriptions**: Refactored participant-related real-time updates to be more granular, preventing unnecessary full data reloads.
+- **Updated Documentation**: Updated `README.md`, `SYNOPSIS.md`, and `CHANGELOG.md` to reflect the current state of the project.
 
 ### Fixed
-- Resolved various race conditions during user login and data fetching.
-- Corrected responsive layout issues on mobile devices.
-- Stabilized middleware and authentication flow.
+- **Voice Note Player**: Completely rebuilt the voice note player to correctly display duration, show a visual waveform, and integrate with the theme.
+- **Session Instability**: Resolved critical race conditions that caused infinite loading screens upon page refresh by implementing a robust, sequential app initialization flow.
+- **State Management**: Corrected local state updates for leaving/deleting groups to prevent real-time event loops.
