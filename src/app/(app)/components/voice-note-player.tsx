@@ -26,6 +26,7 @@ export function VoiceNotePlayer({ src, isMyMessage, metadata }: VoiceNotePlayerP
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  // Get duration from metadata, fallback to 0
   const [duration, setDuration] = useState(metadata?.duration || 0);
   const [playbackRate, setPlaybackRate] = useState(1);
 
@@ -36,30 +37,30 @@ export function VoiceNotePlayer({ src, isMyMessage, metadata }: VoiceNotePlayerP
     const audio = audioRef.current;
     if (!audio) return;
 
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const onEnd = () => setIsPlaying(false);
-    
     // This event fires when the metadata (like duration) has been loaded.
     const onLoadedMetadata = () => {
-      if (!isNaN(audio.duration) && audio.duration > 0) {
+      if (!isNaN(audio.duration) && audio.duration > 0 && audio.duration !== Infinity) {
         setDuration(audio.duration);
       }
-    }
+    };
+    
+    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const onEnd = () => setIsPlaying(false);
 
+    audio.addEventListener('loadedmetadata', onLoadedMetadata);
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('ended', onEnd);
-    audio.addEventListener('loadedmetadata', onLoadedMetadata);
-
+    
     // Set initial state in case metadata is already loaded by the browser
-    if (audio.readyState >= 1) {
+    if (audio.readyState >= 1 && !isNaN(audio.duration) && audio.duration !== Infinity) {
         onLoadedMetadata();
     }
     
     // Cleanup: remove event listeners when the component unmounts
     return () => {
+      audio.removeEventListener('loadedmetadata', onLoadedMetadata);
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('ended', onEnd);
-      audio.removeEventListener('loadedmetadata', onLoadedMetadata);
     };
   }, [src]); // Re-run effect if the audio source changes
 
@@ -69,15 +70,19 @@ export function VoiceNotePlayer({ src, isMyMessage, metadata }: VoiceNotePlayerP
 
     if (isPlaying) {
       audio.pause();
+      setIsPlaying(false);
     } else {
       document.querySelectorAll('audio').forEach(el => el !== audio && el.pause());
-      audio.play().catch(e => {
+      // Handle the promise returned by play() to avoid interruption errors
+      audio.play().then(() => {
+          setIsPlaying(true);
+      }).catch(e => {
         if (e.name !== 'AbortError') {
           console.error("Error playing audio:", e)
         }
+        setIsPlaying(false);
       });
     }
-    setIsPlaying(!isPlaying);
   }, [isPlaying]);
 
   const togglePlaybackRate = useCallback(() => {
@@ -161,7 +166,7 @@ export function VoiceNotePlayer({ src, isMyMessage, metadata }: VoiceNotePlayerP
 
         <div className="flex items-center justify-between">
           <span className={cn("text-xs font-mono", textColor)}>
-            {formatTime(isPlaying ? currentTime : duration)}
+            {formatTime(currentTime)} / {formatTime(duration)}
           </span>
           <button 
              onClick={togglePlaybackRate} 

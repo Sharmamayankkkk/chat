@@ -151,6 +151,31 @@ export function ChatInput({
             });
     }, []);
 
+    const processAudio = async (audioBlob: Blob): Promise<{ duration: number; waveform: number[] }> => {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        const duration = audioBuffer.duration;
+        
+        const rawData = audioBuffer.getChannelData(0);
+        const samples = 64; // Number of waveform bars
+        const blockSize = Math.floor(rawData.length / samples);
+        const waveform = [];
+        for (let i = 0; i < samples; i++) {
+            let sum = 0;
+            for (let j = 0; j < blockSize; j++) {
+                sum += Math.abs(rawData[i * blockSize + j]);
+            }
+            waveform.push(sum / blockSize);
+        }
+
+        // Normalize waveform data
+        const max = Math.max(...waveform);
+        const normalizedWaveform = waveform.map(v => Math.max(0.05, v / max));
+
+        return { duration, waveform: normalizedWaveform };
+    };
+
     // The main function for sending a message. It handles both text and attachments.
     const handleSendMessage = async ({ content, contentToSave, attachment }: { content: string, contentToSave?: string, attachment?: { file: File, url: string, waveform?: number[], duration?: number }}) => {
         if (isSending || (content.trim() === '' && !attachment)) return;
@@ -349,31 +374,6 @@ export function ChatInput({
         if (event.target) event.target.value = '';
     };
 
-    const processAudio = async (audioBlob: Blob): Promise<{ duration: number; waveform: number[] }> => {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const arrayBuffer = await audioBlob.arrayBuffer();
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        const duration = audioBuffer.duration;
-        
-        const rawData = audioBuffer.getChannelData(0);
-        const samples = 64; // Number of waveform bars
-        const blockSize = Math.floor(rawData.length / samples);
-        const waveform = [];
-        for (let i = 0; i < samples; i++) {
-            let sum = 0;
-            for (let j = 0; j < blockSize; j++) {
-                sum += Math.abs(rawData[i * blockSize + j]);
-            }
-            waveform.push(sum / blockSize);
-        }
-
-        // Normalize waveform data
-        const max = Math.max(...waveform);
-        const normalizedWaveform = waveform.map(v => Math.max(0.05, v / max));
-
-        return { duration, waveform: normalizedWaveform };
-    };
-
     // Voice recording logic using the browser's MediaRecorder API.
     const handleStartRecording = async () => {
         try {
@@ -390,17 +390,22 @@ export function ChatInput({
                 const audioFile = new File([audioBlob], `voice-note-${Date.now()}.webm`, { type: 'audio/webm' });
                 const optimisticUrl = URL.createObjectURL(audioBlob);
 
-                const { duration, waveform } = await processAudio(audioBlob);
-
-                await handleSendMessage({ 
-                    content: '', 
-                    attachment: { 
-                        file: audioFile, 
-                        url: optimisticUrl,
-                        duration,
-                        waveform,
-                    } 
-                });
+                try {
+                    const { duration, waveform } = await processAudio(audioBlob);
+                    
+                    await handleSendMessage({ 
+                        content: '', 
+                        attachment: { 
+                            file: audioFile, 
+                            url: optimisticUrl,
+                            duration,
+                            waveform,
+                        } 
+                    });
+                } catch (err) {
+                    console.error("Failed to process audio:", err);
+                    toast({ variant: 'destructive', title: 'Could not process voice note.', description: 'Please try again.' });
+                }
                 
                 stream.getTracks().forEach(track => track.stop());
                 if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);

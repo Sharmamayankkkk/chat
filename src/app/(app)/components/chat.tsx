@@ -674,7 +674,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     );
                 }
                 if (type.startsWith('audio/')) {
-                    return <VoiceNotePlayer src={message.attachment_url!} isMyMessage={message.user_id === loggedInUser.id} />;
+                    return <VoiceNotePlayer src={message.attachment_url!} isMyMessage={message.user_id === loggedInUser.id} metadata={message.attachment_metadata} />;
                 }
                 
                 const truncateFileName = (fileName: string, maxLength: number = 25) => {
