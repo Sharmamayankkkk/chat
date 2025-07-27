@@ -2,6 +2,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Table,
   TableBody,
@@ -33,7 +34,6 @@ import type { User } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAppContext } from '@/providers/app-provider';
-import { cn } from '@/lib/utils';
 
 export function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
@@ -41,6 +41,7 @@ export function UserManagement() {
   const supabase = createClient();
   const { toast } = useToast();
   const { loggedInUser } = useAppContext();
+  const router = useRouter();
 
   const fetchUsers = async () => {
     setIsLoading(true);
@@ -168,7 +169,7 @@ export function UserManagement() {
                       <DropdownMenuItem onClick={() => toggleAdminStatus(user)}>
                         {user.is_admin ? 'Remove Admin' : 'Make Admin'}
                       </DropdownMenuItem>
-                      <DropdownMenuItem disabled>View Profile</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => router.push(`/profile/${user.username}`)}>View Profile</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>
