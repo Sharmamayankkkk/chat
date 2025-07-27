@@ -294,11 +294,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!loggedInUser) return
     const { error } = await supabaseRef.current.from("participants").delete().match({ chat_id: chatId, user_id: loggedInUser.id })
     if (error) toast({ variant: "destructive", title: "Error leaving group", description: error.message })
+    else setChats(current => current.filter(c => c.id !== chatId));
   }, [loggedInUser, toast])
 
   const deleteGroup = useCallback(async (chatId: number) => {
     const { error } = await supabaseRef.current.from("chats").delete().eq("id", chatId)
     if (error) toast({ variant: "destructive", title: "Error deleting group", description: error.message })
+    else setChats(current => current.filter(c => c.id !== chatId));
   }, [toast])
 
   const sendDmRequest = useCallback(async (toUserId: string, reason: string) => {
@@ -312,14 +314,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!loggedInUser) return
     const { error } = await supabaseRef.current.from("blocked_users").insert({ blocker_id: loggedInUser.id, blocked_id: userId })
     if (error) toast({ variant: "destructive", title: "Error blocking user", description: error.message })
-    else toast({ title: "User Blocked" })
+    else setBlockedUsers(current => [...current, userId])
   }, [loggedInUser, toast])
 
   const unblockUser = useCallback(async (userId: string) => {
     if (!loggedInUser) return
     const { error } = await supabaseRef.current.from("blocked_users").delete().match({ blocker_id: loggedInUser.id, blocked_id: userId })
     if (error) toast({ variant: "destructive", title: "Error unblocking user", description: error.message })
-    else toast({ title: "User Unblocked" })
+    else setBlockedUsers(current => current.filter(id => id !== userId))
   }, [loggedInUser, toast])
 
   const reportUser = useCallback(async (reportedUserId: string, reason: string, messageId?: number) => {
@@ -383,5 +385,3 @@ export function useAppContext() {
   }
   return context
 }
-
-    
