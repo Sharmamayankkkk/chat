@@ -14,6 +14,7 @@ import type { User, Chat } from '@/lib/types';
 import { useState, useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReportDialog } from '../../components/report-dialog';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 
 function ProfilePageLoader() {
   return (
@@ -175,16 +176,13 @@ export default function UserProfilePage() {
   const canSendMessage = (loggedInUser.is_admin || user.role !== 'gurudev') && !isBlocked;
 
   return (
-    <>
+    <div className="flex h-full flex-col">
       <ReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} userToReport={user} />
-      <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
-            <ArrowLeft className="h-5 w-5" />
-            <span className="sr-only">Back</span>
-          </Button>
-          <h2 className="text-3xl font-bold tracking-tight">{user.name}'s Profile</h2>
-        </div>
+      <header className="flex items-center gap-4 p-4 border-b bg-background sticky top-0 z-10">
+        <SidebarTrigger className="md:hidden" />
+        <h2 className="text-xl font-bold tracking-tight">{user.name}'s Profile</h2>
+      </header>
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8">
         <div className="grid gap-8 md:grid-cols-3">
           <div className="md:col-span-1">
             <Card>
@@ -274,9 +272,7 @@ export default function UserProfilePage() {
 
           </div>
         </div>
-      </div>
-    </>
+      </main>
+    </div>
   );
 }
-
-    

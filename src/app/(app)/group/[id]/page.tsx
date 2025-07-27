@@ -17,6 +17,7 @@ import React from 'react';
 import { EditGroupDialog } from './edit-group-dialog';
 import type { Chat } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 
 export default function GroupInfoPage() {
   const params = useParams<{ id: string }>();
@@ -78,18 +79,14 @@ export default function GroupInfoPage() {
   }
 
   return (
-    <>
+    <div className="flex h-full flex-col">
       <EditGroupDialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen} group={group} />
-      <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-        <div className="flex items-center justify-between space-y-2">
-          <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={() => router.back()}>
-                  <ArrowLeft className="h-5 w-5" />
-                  <span className="sr-only">Back</span>
-              </Button>
-              <h2 className="text-3xl font-bold tracking-tight">{group.name} Info</h2>
-          </div>
-        </div>
+      <header className="flex items-center gap-4 p-4 border-b bg-background sticky top-0 z-10">
+        <SidebarTrigger className="md:hidden" />
+        <h2 className="text-xl font-bold tracking-tight">{group.name} Info</h2>
+      </header>
+
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8">
         <div className="grid gap-8 md:grid-cols-3">
           <div className="md:col-span-1">
             <Card>
@@ -230,7 +227,7 @@ export default function GroupInfoPage() {
             </Card>
           </div>
         </div>
-      </div>
-    </>
+      </main>
+    </div>
   );
 }

@@ -35,8 +35,6 @@ export function ChatLayout({ chats, children }: ChatLayoutProps) {
               <Icons.logo className="h-8 w-8 text-primary" />
               <span className="text-lg font-semibold">Krishna Connect</span>
             </div>
-            {/* The button to collapse/expand the sidebar on desktop. */}
-            <SidebarTrigger className="hidden md:flex" />
           </div>
         </SidebarHeader>
 

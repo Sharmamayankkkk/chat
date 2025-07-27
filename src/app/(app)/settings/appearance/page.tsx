@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -15,6 +16,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 
 const colorOptions = [
   // Vibrant
@@ -141,9 +143,10 @@ export default function ChatAppearancePage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex h-full flex-col">
       <header className="flex items-center gap-4 p-4 border-b bg-background sticky top-0 z-10">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+        <SidebarTrigger className="md:hidden" />
+        <Button variant="ghost" size="icon" onClick={() => router.back()} className="hidden md:inline-flex">
           <ArrowLeft />
           <span className="sr-only">Back</span>
         </Button>

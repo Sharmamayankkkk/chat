@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/utils";
 import { v4 as uuidv4 } from "uuid";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 
 function ProfilePageLoader() {
   return (
@@ -161,7 +162,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+    <div className="flex h-full flex-col">
        <input
         type="file"
         ref={avatarInputRef}
@@ -169,99 +170,97 @@ export default function ProfilePage() {
         className="hidden"
         accept="image/*"
       />
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="h-5 w-5" />
-          <span className="sr-only">Back</span>
-        </Button>
-        <h2 className="text-3xl font-bold tracking-tight">My Profile</h2>
-      </div>
-      <div className="grid gap-8 md:grid-cols-3">
-        <div className="md:col-span-1">
-          <Card>
-            <CardContent className="p-6 flex flex-col items-center text-center">
-              <Avatar className="h-24 w-24 mb-4">
-                <AvatarImage
-                  src={avatarPreview}
-                  alt={loggedInUser.name}
-                  data-ai-hint="avatar"
-                />
-                <AvatarFallback>{name.charAt(0)}</AvatarFallback>
-              </Avatar>
-              <h3 className="text-xl font-semibold">{name}</h3>
-              <p className="text-muted-foreground">@{username}</p>
-              <Button className="mt-4" onClick={() => avatarInputRef.current?.click()}>Change Avatar</Button>
-            </CardContent>
-          </Card>
-        </div>
-        <div className="md:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Account Details</CardTitle>
-              <CardDescription>Update your personal information.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="username">Username</Label>
-                  <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
-                </div>
-                 <div className="space-y-2">
-                  <Label htmlFor="gender">Gender</Label>
-                  <Input
-                    id="gender"
-                    value={
-                      loggedInUser.gender === "male"
-                        ? "Prabhuji (Male)"
-                        : loggedInUser.gender === "female"
-                        ? "Mataji (Female)"
-                        : "Not specified"
-                    }
-                    disabled
+      <header className="flex items-center gap-4 p-4 border-b bg-background sticky top-0 z-10">
+        <SidebarTrigger className="md:hidden" />
+        <h2 className="text-xl font-bold tracking-tight">My Profile</h2>
+      </header>
+
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8">
+        <div className="grid gap-8 md:grid-cols-3">
+          <div className="md:col-span-1">
+            <Card>
+              <CardContent className="p-6 flex flex-col items-center text-center">
+                <Avatar className="h-24 w-24 mb-4">
+                  <AvatarImage
+                    src={avatarPreview}
+                    alt={loggedInUser.name}
+                    data-ai-hint="avatar"
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={loggedInUser.email}
-                    disabled
-                  />
-                </div>
-                <div className="space-y-2 col-span-full">
-                  <Label htmlFor="role">Role</Label>
-                  <div className="w-min">
-                    {getRoleBadge(loggedInUser.role, loggedInUser.is_admin)}
+                  <AvatarFallback>{name.charAt(0)}</AvatarFallback>
+                </Avatar>
+                <h3 className="text-xl font-semibold">{name}</h3>
+                <p className="text-muted-foreground">@{username}</p>
+                <Button className="mt-4" onClick={() => avatarInputRef.current?.click()}>Change Avatar</Button>
+              </CardContent>
+            </Card>
+          </div>
+          <div className="md:col-span-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Account Details</CardTitle>
+                <CardDescription>Update your personal information.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Name</Label>
+                    <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="username">Username</Label>
+                    <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
+                  </div>
+                   <div className="space-y-2">
+                    <Label htmlFor="gender">Gender</Label>
+                    <Input
+                      id="gender"
+                      value={
+                        loggedInUser.gender === "male"
+                          ? "Prabhuji (Male)"
+                          : loggedInUser.gender === "female"
+                          ? "Mataji (Female)"
+                          : "Not specified"
+                      }
+                      disabled
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={loggedInUser.email}
+                      disabled
+                    />
+                  </div>
+                  <div className="space-y-2 col-span-full">
+                    <Label htmlFor="role">Role</Label>
+                    <div className="w-min">
+                      {getRoleBadge(loggedInUser.role, loggedInUser.is_admin)}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bio">Bio</Label>
-                <Textarea
-                  id="bio"
-                  placeholder="Tell us a little bit about yourself"
-                  className="resize-none"
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                />
-              </div>
-              <div className="flex justify-end">
-                <Button onClick={handleSaveChanges} disabled={isSaving}>
-                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Save Changes
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="space-y-2">
+                  <Label htmlFor="bio">Bio</Label>
+                  <Textarea
+                    id="bio"
+                    placeholder="Tell us a little bit about yourself"
+                    className="resize-none"
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={handleSaveChanges} disabled={isSaving}>
+                    {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Save Changes
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
-
-    

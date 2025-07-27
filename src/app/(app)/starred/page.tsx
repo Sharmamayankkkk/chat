@@ -13,6 +13,7 @@ import React from 'react';
 import type { Message, Chat } from '@/lib/types';
 import { createClient } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 
 interface StarredMessage extends Message {
   chat: Partial<Chat>;
@@ -105,73 +106,67 @@ export default function StarredMessagesPage() {
 
 
   return (
-    <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-      <div className="flex items-center justify-between space-y-2">
-        <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => router.back()}>
-                <ArrowLeft className="h-5 w-5" />
-                <span className="sr-only">Back</span>
-            </Button>
-            <div className="flex items-center gap-2">
-                <Star className="h-8 w-8 text-amber-500 fill-amber-400" />
-                <h2 className="text-3xl font-bold tracking-tight">Starred Messages</h2>
-            </div>
+    <div className="flex h-full flex-col">
+      <header className="flex items-center gap-4 p-4 border-b bg-background sticky top-0 z-10">
+        <SidebarTrigger className="md:hidden" />
+        <div className="flex items-center gap-2">
+            <Star className="h-6 w-6 text-amber-500 fill-amber-400" />
+            <h2 className="text-xl font-bold tracking-tight">Starred Messages</h2>
         </div>
-      </div>
+      </header>
       
-      {isLoading ? (
-        <StarredPageLoader />
-      ) : starredMessages.length > 0 ? (
-        <div className="space-y-4">
-            {starredMessages.map(message => (
-                <Card key={message.id}>
-                    <CardHeader className="pb-2">
-                         <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <Avatar className="h-9 w-9">
-                                    <AvatarImage src={message.profiles.avatar_url} alt={message.profiles.name} data-ai-hint="avatar" />
-                                    <AvatarFallback>{message.profiles.name.charAt(0)}</AvatarFallback>
-                                </Avatar>
-                                <div>
-                                    <p className="font-semibold">{message.profiles.name}</p>
-                                    <p className="text-xs text-muted-foreground">
-                                        in <Link href={`/chat/${message.chat_id}`} className="font-medium hover:underline">{message.chat.name || 'DM'}</Link>
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                                {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
-                            </div>
-                         </div>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="whitespace-pre-wrap text-foreground/90">{message.content}</p>
-                        <div className="mt-4 flex justify-end">
-                             <Button variant="outline" size="sm" onClick={() => handleGoToMessage(message.chat_id, message.id)}>
-                                <MessageSquare className="mr-2 h-4 w-4" />
-                                Go to message
-                            </Button>
-                        </div>
-                    </CardContent>
-                </Card>
-            ))}
-        </div>
-      ) : (
-        <Card className="flex flex-col items-center justify-center p-12 text-center">
-            <CardHeader>
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
-                    <Star className="h-8 w-8 text-muted-foreground" />
-                </div>
-                <CardTitle>No Starred Messages</CardTitle>
-                <CardDescription>
-                    You can star important messages to keep track of them here.
-                </CardDescription>
-            </CardHeader>
-        </Card>
-      )}
-
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4">
+        {isLoading ? (
+          <StarredPageLoader />
+        ) : starredMessages.length > 0 ? (
+          <div className="space-y-4">
+              {starredMessages.map(message => (
+                  <Card key={message.id}>
+                      <CardHeader className="pb-2">
+                           <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                  <Avatar className="h-9 w-9">
+                                      <AvatarImage src={message.profiles.avatar_url} alt={message.profiles.name} data-ai-hint="avatar" />
+                                      <AvatarFallback>{message.profiles.name.charAt(0)}</AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                      <p className="font-semibold">{message.profiles.name}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                          in <Link href={`/chat/${message.chat_id}`} className="font-medium hover:underline">{message.chat.name || 'DM'}</Link>
+                                      </p>
+                                  </div>
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                  {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
+                              </div>
+                           </div>
+                      </CardHeader>
+                      <CardContent>
+                          <p className="whitespace-pre-wrap text-foreground/90">{message.content}</p>
+                          <div className="mt-4 flex justify-end">
+                               <Button variant="outline" size="sm" onClick={() => handleGoToMessage(message.chat_id, message.id)}>
+                                  <MessageSquare className="mr-2 h-4 w-4" />
+                                  Go to message
+                              </Button>
+                          </div>
+                      </CardContent>
+                  </Card>
+              ))}
+          </div>
+        ) : (
+          <Card className="flex flex-col items-center justify-center p-12 text-center h-full">
+              <CardHeader>
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
+                      <Star className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <CardTitle>No Starred Messages</CardTitle>
+                  <CardDescription>
+                      You can star important messages to keep track of them here.
+                  </CardDescription>
+              </CardHeader>
+          </Card>
+        )}
+      </main>
     </div>
   );
 }
-
-    

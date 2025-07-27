@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/Sharmamayankkkk/krishna-connect/main/public/logo/light_KCS.png#gh-light-mode-only" alt="Krishna Connect Logo" width="150">
-  <img src="https://raw.githubusercontent.com/Sharmamayankkkk/krishna-connect/main/public/logo/dark_KCS.png#gh-dark-mode-only" alt="Krishna Connect Logo" width="150">
+  <img src="https://raw.githubusercontent.com/Sharmamayankkkk/chat/main/public/logo/light_KCS.png#gh-light-mode-only" alt="Krishna Connect Logo" width="150">
+  <img src="https://raw.githubusercontent.com/Sharmamayankkkk/chat/main/public/logo/dark_KCS.png#gh-dark-mode-only" alt="Krishna Connect Logo" width="150">
 
   <h1 align="center">Krishna Connect</h1>
 

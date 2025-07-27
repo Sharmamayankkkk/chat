@@ -16,6 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Rocket, ArrowLeft, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/utils"
+import { SidebarTrigger } from "@/components/ui/sidebar"
 
 export default function SettingsPage() {
   const { loggedInUser } = useAppContext();
@@ -71,18 +72,12 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-      <div className="flex items-center justify-between space-y-2">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
-            <ArrowLeft className="h-5 w-5" />
-            <span className="sr-only">Back</span>
-          </Button>
-          <h2 className="text-3xl font-bold tracking-tight">Settings</h2>
-        </div>
-      </div>
-
-      <div className="space-y-8">
+    <div className="flex h-full flex-col">
+      <header className="flex items-center gap-4 p-4 border-b bg-background sticky top-0 z-10">
+        <SidebarTrigger className="md:hidden" />
+        <h2 className="text-xl font-bold tracking-tight">Settings</h2>
+      </header>
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8">
         <Card>
           <CardHeader>
             <CardTitle>Appearance</CardTitle>
@@ -216,7 +211,7 @@ export default function SettingsPage() {
             </AlertDialog>
           </CardFooter>
         </Card>
-      </div>
+      </main>
     </div>
   )
 }
