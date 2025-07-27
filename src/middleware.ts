@@ -33,47 +33,49 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  const publicRoutes = ['/login', '/signup', '/forgot-password', '/update-password', '/auth/callback'];
+  // Define public routes that don't require authentication
+  const publicRoutes = [
+    '/login', 
+    '/signup', 
+    '/forgot-password', 
+    '/update-password', 
+    '/auth/callback',
+    '/terms-and-conditions',
+    '/privacy-policy',
+    '/sitemap.xml'
+  ];
+  
+  // Check if the current path is a public route or an API/join route
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
-
-  if (pathname.startsWith('/join/')) {
+  if (isPublicRoute || pathname.startsWith('/api') || pathname.startsWith('/join/')) {
     return response;
   }
   
-  // If the user is logged in
-  if (session) {
-    // Special handling for the update-password page
-    if (pathname === '/update-password') {
-      // Allow access if they have a session, as the page itself handles logic.
-      return response;
-    }
+  // If there's no session, redirect unauthenticated users to the login page
+  if (!session) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.searchParams.set('next', pathname) // Save the intended destination
+    return NextResponse.redirect(url)
+  }
 
-    const { data: profile } = await supabase.from('profiles').select('username').eq('id', session.user.id).single();
-    const isProfileComplete = profile && profile.username;
+  // If there is a session, handle profile completion and other redirects
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('username')
+    .eq('id', session.user.id)
+    .single();
 
-    // If profile is incomplete, redirect to the completion page, unless they are already there.
-    if (!isProfileComplete && pathname !== '/complete-profile') {
-      return NextResponse.redirect(new URL('/complete-profile', request.url));
-    }
-    
-    // If profile is complete but they are on the completion page, redirect to chat.
-    if (isProfileComplete && pathname === '/complete-profile') {
-      return NextResponse.redirect(new URL('/chat', request.url));
-    }
-
-    // If the user is logged in and tries to access login/signup, redirect to chat
-    const authRoutes = ['/login', '/signup'];
-    if (authRoutes.some(route => pathname.startsWith(route))) {
-      return NextResponse.redirect(new URL('/chat', request.url))
-    }
-  } else {
-    // If the user is not logged in and the route is not public, redirect to login
-    if (!isPublicRoute) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/login'
-      url.searchParams.set('next', pathname)
-      return NextResponse.redirect(url)
-    }
+  const isProfileComplete = profile && profile.username;
+  
+  // If profile is not complete, force redirect to complete-profile page
+  if (!isProfileComplete && pathname !== '/complete-profile') {
+    return NextResponse.redirect(new URL('/complete-profile', request.url));
+  }
+  
+  // If profile is complete, redirect away from auth pages to the main app
+  if (isProfileComplete && (pathname === '/login' || pathname === '/signup' || pathname === '/complete-profile')) {
+    return NextResponse.redirect(new URL('/chat', request.url));
   }
 
   return response
@@ -83,12 +85,11 @@ export const config = {
   matcher: [
     /*
      * Match all request paths except for the ones starting with:
-     * - api (API routes)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - and files with extensions like svg, png, jpg, jpeg, gif, wepb
+     * - and files with common image/asset extensions
      */
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 }
