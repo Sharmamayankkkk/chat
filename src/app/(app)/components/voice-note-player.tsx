@@ -1,6 +1,7 @@
+
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Play, Pause } from 'lucide-react';
@@ -25,52 +26,66 @@ export function VoiceNotePlayer({ src, isMyMessage }: VoiceNotePlayerProps) {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
 
+  // This effect hook sets up and cleans up the audio event listeners.
+  // It runs whenever the audio source 'src' changes.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
+    // These functions update our component's state based on the audio element's events.
     const setAudioData = () => {
       if (isFinite(audio.duration)) {
         setDuration(audio.duration);
       }
     };
     const setAudioTime = () => setCurrentTime(audio.currentTime);
-    const handlePause = () => setIsPlaying(false);
-    const handlePlay = () => setIsPlaying(true);
+    const handleEnd = () => setIsPlaying(false);
 
+    // We add event listeners to the audio element.
     audio.addEventListener('loadedmetadata', setAudioData);
     audio.addEventListener('durationchange', setAudioData);
     audio.addEventListener('timeupdate', setAudioTime);
-    audio.addEventListener('ended', handlePause);
-    audio.addEventListener('pause', handlePause);
-    audio.addEventListener('play', handlePlay);
+    audio.addEventListener('ended', handleEnd);
 
+    // If the audio data is already loaded when this effect runs, we set the duration immediately.
     if (audio.readyState > 0 && isFinite(audio.duration)) {
       setDuration(audio.duration);
     }
+    
+    // Reset state when the source changes
+    setIsPlaying(false);
+    setCurrentTime(0);
 
+    // This is the cleanup function. It runs when the component is unmounted
+    // or before the effect runs again (e.g., if 'src' changes).
+    // This prevents memory leaks.
     return () => {
       audio.removeEventListener('loadedmetadata', setAudioData);
       audio.removeEventListener('durationchange', setAudioData);
       audio.removeEventListener('timeupdate', setAudioTime);
-      audio.removeEventListener('ended', handlePause);
-      audio.removeEventListener('pause', handlePause);
-      audio.removeEventListener('play', handlePlay);
+      audio.removeEventListener('ended', handleEnd);
     };
-  }, []);
+  }, [src]); // The effect re-runs if 'src' changes.
 
+  // Toggles playback. Pauses all other audio elements on the page.
   const togglePlayPause = () => {
     const audio = audioRef.current;
     if (audio) {
       if (isPlaying) {
         audio.pause();
       } else {
-        document.querySelectorAll('audio').forEach(el => el.pause());
+        // Pause any other playing audio on the page
+        document.querySelectorAll('audio').forEach(el => {
+            if (el !== audio) el.pause();
+        });
         audio.play().catch(e => console.error("Error playing audio:", e));
       }
+      setIsPlaying(!isPlaying);
     }
   };
   
+  // This function is called when the user drags or clicks on the slider.
+  // It allows "scrubbing" to a specific point in the audio.
   const handleSliderChange = (value: number[]) => {
       if(audioRef.current) {
           const newTime = value[0];
