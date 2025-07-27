@@ -165,17 +165,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsReady(true);
     }
-  }, [toast, requestNotificationPermission, addChat]);
+  }, [toast, requestNotificationPermission]);
   
   useEffect(() => {
     const checkSession = async () => {
       if (initAttemptedRef.current) return;
       initAttemptedRef.current = true;
       try {
-        const { data } = await supabaseRef.current.auth.getSession();
-        if (data.session) {
-          setSession(data.session);
-          await fetchInitialData(data.session.user);
+        const { data: { user } } = await supabaseRef.current.auth.getUser();
+        if (user) {
+          await fetchInitialData(user);
         } else {
           setIsReady(true);
         }
@@ -191,9 +190,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
         setSession(session);
         if (event === "SIGNED_IN") {
-            if (session?.user) {
-                await fetchInitialData(session.user);
-            }
+          const { data: { user } } = await supabaseRef.current.auth.getUser();
+          if (user) {
+            await fetchInitialData(user);
+          }
         } else if (event === "SIGNED_OUT") {
             router.push('/login');
             resetState();
@@ -292,12 +292,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       supabaseRef.current.channel('dm-requests-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, async () => {
-            if(session?.user) await fetchInitialData(session.user);
+            const { data: { user } } = await supabaseRef.current.auth.getUser();
+            if(user) await fetchInitialData(user);
         }),
 
       supabaseRef.current.channel('blocked-users-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, async () => {
-             if(session?.user) await fetchInitialData(session.user);
+            const { data: { user } } = await supabaseRef.current.auth.getUser();
+            if(user) await fetchInitialData(user);
         }),
 
       supabaseRef.current.channel('public:chats')
