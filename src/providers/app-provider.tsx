@@ -52,6 +52,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const dataLoadedForSession = useRef<string | null>(null)
+  const initAttemptedRef = useRef(false);
 
   const requestNotificationPermission = useCallback(async () => {
     if ("Notification" in window && Notification.permission === "default") {
@@ -79,9 +80,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   
   const fetchInitialData = useCallback(async (user: AuthUser) => {
     if (dataLoadedForSession.current === user.id) return;
-    dataLoadedForSession.current = user.id;
-
+    
     try {
+        dataLoadedForSession.current = user.id;
+
         let profile: User | null = null;
         for (let i = 0; i < 5; i++) {
           const { data, error } = await supabaseRef.current
@@ -154,15 +156,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         await requestNotificationPermission();
     } catch (error: any) {
+        dataLoadedForSession.current = null;
         toast({
             variant: "destructive",
             title: "Error Loading Data",
             description: error.message || "Failed to load application data. Please try again.",
         });
-        await supabaseRef.current.auth.signOut();
+    } finally {
+      setIsReady(true);
     }
   }, [toast, requestNotificationPermission, addChat]);
   
+  useEffect(() => {
+    const checkSession = async () => {
+      if (initAttemptedRef.current) return;
+      initAttemptedRef.current = true;
+      try {
+        const { data } = await supabaseRef.current.auth.getSession();
+        if (data.session) {
+          setSession(data.session);
+          await fetchInitialData(data.session.user);
+        } else {
+          setIsReady(true);
+        }
+      } catch (error) {
+        console.error("Error checking session:", error);
+        setIsReady(true);
+      }
+    };
+    checkSession();
+  }, [fetchInitialData]);
+
   useEffect(() => {
     const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
         setSession(session);
@@ -173,17 +197,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } else if (event === "SIGNED_OUT") {
             router.push('/login');
             resetState();
-        }
-        
-        if (!isReady) {
-          setIsReady(true);
+            setIsReady(true);
         }
     });
 
     return () => {
         authListener.subscription.unsubscribe();
     };
-  }, [fetchInitialData, resetState, router, isReady]);
+  }, [fetchInitialData, resetState, router]);
 
 
   const handleNewMessage = useCallback(
@@ -249,17 +270,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       supabaseRef.current.channel('participants-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, async (payload) => {
             if (payload.eventType === 'DELETE') {
-                const chatId = (payload.old as { chat_id: number }).chat_id;
-                if (chatId) {
-                    setChats(current => current.filter(c => c.id !== chatId));
+                const oldRecord = payload.old as { chat_id: number };
+                if (oldRecord.chat_id) {
+                    setChats(current => current.filter(c => c.id !== oldRecord.chat_id));
                 }
             } else if (payload.eventType === 'INSERT') {
-                const chatId = (payload.new as { chat_id: number }).chat_id;
-                if (chatId && !chats.some(c => c.id === chatId)) {
+                const newRecord = payload.new as { chat_id: number };
+                if (newRecord.chat_id && !chats.some(c => c.id === newRecord.chat_id)) {
                     const { data } = await supabaseRef.current
                         .from('chats')
                         .select('*, participants:participants!chat_id(*, profiles!user_id(*))')
-                        .eq('id', chatId)
+                        .eq('id', newRecord.chat_id)
                         .single();
                     
                     if (data) {
