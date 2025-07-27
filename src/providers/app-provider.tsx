@@ -72,7 +72,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const fetchInitialData = useCallback(async (user: AuthUser) => {
     if (dataLoadedForSession.current === user.id) return;
-    dataLoadedForSession.current = user.id;
+    
+    // Use a promise to ensure only one fetchInitialData runs at a time for this user
+    if (dataLoadedForSession.current === `loading-${user.id}`) {
+      return;
+    }
+    
+    dataLoadedForSession.current = `loading-${user.id}`;
 
     try {
         let profile: User | null = null;
@@ -83,7 +89,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             .eq("id", user.id)
             .single();
           
-          if (error && error.code !== 'PGRST116') throw error;
+          if (error && error.code !== 'PGRST116') {
+            console.error(`Profile fetch attempt ${i + 1} failed:`, error);
+            if (i === 4) throw error; // Only throw on final attempt
+          }
           
           if (data) {
             profile = data as User;
@@ -94,21 +103,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         if (!profile) {
             console.error("Failed to fetch profile after multiple attempts.");
+            dataLoadedForSession.current = null;
             throw new Error("Could not fetch user profile. Please try logging in again.");
         }
         
         const fullUserProfile = { ...profile, email: user.email } as User;
-        const savedTheme = localStorage.getItem('themeSettings');
-        if (savedTheme) {
-          setThemeSettingsState(JSON.parse(savedTheme));
+        
+        // Load theme settings from localStorage
+        try {
+          const savedTheme = localStorage.getItem('themeSettings');
+          if (savedTheme) {
+            setThemeSettingsState(JSON.parse(savedTheme));
+          }
+        } catch (error) {
+          console.warn("Failed to load theme settings from localStorage:", error);
         }
+        
         setLoggedInUser(fullUserProfile);
 
         const [
-            { data: allUsersData },
-            { data: dmRequestsData },
-            { data: blockedData },
-            { data: participantRecords }
+            { data: allUsersData, error: usersError },
+            { data: dmRequestsData, error: dmError },
+            { data: blockedData, error: blockedError },
+            { data: participantRecords, error: participantsError }
         ] = await Promise.all([
             supabaseRef.current.from("profiles").select("*"),
             supabaseRef.current.from("dm_requests").select("*, from:profiles!from_user_id(*), to:profiles!to_user_id(*)").or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`),
@@ -116,60 +133,103 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseRef.current.from('participants').select('chat_id').eq('user_id', user.id)
         ]);
         
+        // Handle potential errors from parallel queries
+        if (usersError) console.warn("Failed to load all users:", usersError);
+        if (dmError) console.warn("Failed to load DM requests:", dmError);
+        if (blockedError) console.warn("Failed to load blocked users:", blockedError);
+        if (participantsError) console.warn("Failed to load participants:", participantsError);
+        
         setAllUsers((allUsersData as User[]) || []);
         setDmRequests((dmRequestsData as DmRequest[]) || []);
         setBlockedUsers(blockedData?.map((b) => b.blocked_id) || []);
 
         const chatIds = participantRecords?.map(p => p.chat_id) || [];
         if (chatIds.length > 0) {
-            const { data: chatsData } = await supabaseRef.current
+            const { data: chatsData, error: chatsError } = await supabaseRef.current
                 .from('chats')
                 .select('*, participants:participants!chat_id(*, profiles!user_id(*))')
                 .in('id', chatIds);
             
-            const initialChats = (chatsData || []).map(c => ({...c, messages: [], unreadCount: 0})) as Chat[];
-            setChats(initialChats);
+            if (chatsError) {
+              console.warn("Failed to load chats:", chatsError);
+            } else {
+              const initialChats = (chatsData || []).map(c => ({...c, messages: [], unreadCount: 0})) as Chat[];
+              setChats(initialChats);
 
-            const { data: lastMessages } = await supabaseRef.current.rpc('get_last_messages_for_chats', { p_chat_ids: chatIds });
-            if (lastMessages) {
+              const { data: lastMessages, error: messagesError } = await supabaseRef.current.rpc('get_last_messages_for_chats', { p_chat_ids: chatIds });
+              
+              if (messagesError) {
+                console.warn("Failed to load last messages:", messagesError);
+              } else if (lastMessages) {
                 setChats(currentChats => {
-                    const chatsMap = new Map(currentChats.map(c => [c.id, c]));
-                    (lastMessages as any[]).forEach(msg => {
-                        const chat = chatsMap.get(msg.chat_id);
-                        if (chat) {
-                            chat.last_message_content = msg.content || msg.attachment_metadata?.name || 'No messages yet';
-                            chat.last_message_timestamp = msg.created_at;
-                        }
-                    });
-                    return sortChats(Array.from(chatsMap.values()));
+                  const chatsMap = new Map(currentChats.map(c => [c.id, c]));
+                  (lastMessages as any[]).forEach(msg => {
+                      const chat = chatsMap.get(msg.chat_id);
+                      if (chat) {
+                          chat.last_message_content = msg.content || msg.attachment_metadata?.name || 'No messages yet';
+                          chat.last_message_timestamp = msg.created_at;
+                      }
+                  });
+                  return sortChats(Array.from(chatsMap.values()));
                 });
+              }
             }
         }
+        
         await requestNotificationPermission();
+        
+        // Mark as successfully loaded
+        dataLoadedForSession.current = user.id;
+        
     } catch (error: any) {
+        console.error("fetchInitialData failed:", error);
+        dataLoadedForSession.current = null;
         toast({
             variant: "destructive",
             title: "Error Loading Data",
             description: error.message || "Failed to load application data. Please try again.",
         });
-        await supabaseRef.current.auth.signOut();
+        
+        // Only sign out if it's a critical auth error, not a data loading error
+        if (error.message?.includes('user profile')) {
+          await supabaseRef.current.auth.signOut();
+        }
     }
   }, [toast, requestNotificationPermission]);
   
   useEffect(() => {
     const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
-        setSession(session);
-        if (event === "SIGNED_IN") {
-            if (session?.user) {
-                await fetchInitialData(session.user);
-            }
-        } else if (event === "SIGNED_OUT") {
-            router.push('/login');
-            resetState();
-        }
+        console.log('Auth state change:', event, !!session);
         
-        if (!isReady) {
-          setIsReady(true);
+        setSession(session);
+        
+        if (event === "SIGNED_IN" && session?.user) {
+            // Don't set isReady until data is loaded
+            setIsReady(false);
+            await fetchInitialData(session.user);
+            setIsReady(true);
+        } else if (event === "SIGNED_OUT") {
+            setIsReady(false);
+            resetState();
+            router.push('/login');
+        } else if (event === "TOKEN_REFRESHED" && session?.user) {
+            // Handle token refresh without full data reload if user is same
+            if (dataLoadedForSession.current !== session.user.id) {
+              setIsReady(false);
+              await fetchInitialData(session.user);
+              setIsReady(true);
+            }
+        } else {
+            // For initial load or other events, set ready state appropriately
+            if (!isReady && (event === "INITIAL_SESSION")) {
+              if (session?.user) {
+                setIsReady(false);
+                await fetchInitialData(session.user);
+                setIsReady(true);
+              } else {
+                setIsReady(true); // No session, ready to show login
+              }
+            }
         }
     });
 
@@ -231,39 +291,60 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    // Only set up subscriptions if we have a logged in user and no existing subscriptions
     if (!loggedInUser || subscriptionsRef.current.length > 0) {
       return;
     }
+
+    console.log('Setting up real-time subscriptions for user:', loggedInUser.id);
 
     const channels = [
       supabaseRef.current.channel('public-messages-notifications')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => handleNewMessage(payload as any)),
       supabaseRef.current.channel('participants-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, async () => {
-          if (session) await fetchInitialData(session.user)
+          console.log('Participants changed, refreshing data');
+          if (session?.user) await fetchInitialData(session.user)
         }),
       supabaseRef.current.channel('dm-requests-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, async () => {
-          if (session) await fetchInitialData(session.user)
+          console.log('DM requests changed, refreshing data');
+          if (session?.user) await fetchInitialData(session.user)
         }),
       supabaseRef.current.channel('blocked-users-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, async () => {
-          if (session) await fetchInitialData(session.user)
+          console.log('Blocked users changed, refreshing data');
+          if (session?.user) await fetchInitialData(session.user)
         }),
       supabaseRef.current.channel('public:chats')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chats' }, payload => {
+            console.log('Chat updated:', payload.new.id);
             setChats(current => current.map(c => c.id === payload.new.id ? {...c, ...payload.new} : c))
         })
     ];
     
-    channels.forEach(c => c.subscribe());
+    // Subscribe to all channels
+    const subscribePromises = channels.map(c => c.subscribe());
     subscriptionsRef.current = channels;
 
+    Promise.all(subscribePromises).then(() => {
+      console.log('All real-time subscriptions established');
+    }).catch(error => {
+      console.error('Failed to establish real-time subscriptions:', error);
+    });
+
     return () => {
-      subscriptionsRef.current.forEach((sub) => sub.unsubscribe());
+      console.log('Cleaning up real-time subscriptions');
+      subscriptionsRef.current.forEach((sub) => {
+        try {
+          sub.unsubscribe();
+        } catch (error) {
+          console.warn('Error unsubscribing from channel:', error);
+        }
+      });
       subscriptionsRef.current = [];
     };
-  }, [loggedInUser, session, handleNewMessage, fetchInitialData]);
+  }, [loggedInUser?.id, session, handleNewMessage, fetchInitialData]);
 
   const setThemeSettings = useCallback(async (newSettings: Partial<ThemeSettings>) => {
     if (!loggedInUser) return;

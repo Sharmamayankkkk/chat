@@ -27,9 +27,14 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
+  let session = null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    session = data.session;
+  } catch (error) {
+    console.error('Middleware: Error getting session:', error);
+    // Continue without session - let client-side handle auth
+  }
 
   const { pathname } = request.nextUrl
 
@@ -60,11 +65,18 @@ export async function middleware(request: NextRequest) {
   }
 
   // If there is a session, handle profile completion and other redirects
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('username')
-    .eq('id', session.user.id)
-    .single();
+  let profile = null;
+  try {
+    const { data } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', session.user.id)
+      .single();
+    profile = data;
+  } catch (error) {
+    console.error('Middleware: Error fetching profile:', error);
+    // Continue without profile check - let client-side handle this
+  }
 
   const isProfileComplete = profile && profile.username;
   

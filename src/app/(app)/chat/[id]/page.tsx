@@ -76,19 +76,24 @@ export default function ChatPage() {
 
   // This `useEffect` hook triggers the initial message fetch when the component is ready.
   useEffect(() => {
-    if (isAppReady && loggedInUser?.id && chatId) {
+    if (isAppReady && loggedInUser?.id && chatId && !isNaN(chatId)) {
+      console.log('Fetching messages for chat:', chatId);
       fetchMessages();
     }
   }, [chatId, isAppReady, loggedInUser?.id, fetchMessages])
 
   // This hook marks messages as read when the chat is opened or the window is focused.
   useEffect(() => {
-    if (chatId && loggedInUser?.id) {
+    if (chatId && loggedInUser?.id && !isNaN(chatId)) {
       const markAsRead = async () => {
-        resetUnreadCount(chatId)
-        // This is a remote procedure call (RPC) to a custom database function
-        // that efficiently marks all messages in the chat as read for the current user.
-        await supabase.rpc('mark_messages_as_read', { p_chat_id: chatId, p_user_id: loggedInUser.id });
+        try {
+          resetUnreadCount(chatId)
+          // This is a remote procedure call (RPC) to a custom database function
+          // that efficiently marks all messages in the chat as read for the current user.
+          await supabase.rpc('mark_messages_as_read', { p_chat_id: chatId, p_user_id: loggedInUser.id });
+        } catch (error) {
+          console.warn('Failed to mark messages as read:', error);
+        }
       }
       markAsRead()
       window.addEventListener("focus", markAsRead)
@@ -99,40 +104,73 @@ export default function ChatPage() {
   // *** THIS IS THE CORE OF THE REAL-TIME FIX ***
   // This `useEffect` hook sets up the real-time subscription for the current chat.
   useEffect(() => {
+    // Only set up subscription if we have valid prerequisites
+    if (!chatId || isNaN(chatId) || !loggedInUser?.id) {
+      return;
+    }
+
+    console.log('Setting up real-time subscription for chat:', chatId);
+
     // This function will be called every time a new message is inserted into the database.
     const handleNewMessage = async (payload: any) => {
+        console.log('New message received:', payload.new.id);
         // The payload only contains the basic new message. We need to fetch the full
         // message details (like the sender's profile) to display it correctly.
-        const { data: fullMessage, error } = await supabase
-          .from("messages")
-          .select(FULL_MESSAGE_SELECT_QUERY)
-          .eq("id", payload.new.id)
-          .single()
-        
-        if (error || !fullMessage) return;
+        try {
+          const { data: fullMessage, error } = await supabase
+            .from("messages")
+            .select(FULL_MESSAGE_SELECT_QUERY)
+            .eq("id", payload.new.id)
+            .single()
+          
+          if (error) {
+            console.error('Failed to fetch full message:', error);
+            return;
+          }
 
-        // We update our local `messages` state by adding the new message to the end.
-        // We also check to make sure we don't accidentally add a duplicate message.
-        setMessages(currentMessages => {
-            if (currentMessages.some(m => m.id === fullMessage.id)) {
-                return currentMessages;
-            }
-            return [...currentMessages, fullMessage as Message]
-        });
+          if (!fullMessage) {
+            console.warn('No message data returned for ID:', payload.new.id);
+            return;
+          }
+
+          // We update our local `messages` state by adding the new message to the end.
+          // We also check to make sure we don't accidentally add a duplicate message.
+          setMessages(currentMessages => {
+              if (currentMessages.some(m => m.id === fullMessage.id)) {
+                  return currentMessages;
+              }
+              return [...currentMessages, fullMessage as Message]
+          });
+        } catch (error) {
+          console.error('Error handling new message:', error);
+        }
     }
 
     // This function handles real-time updates for edited messages.
     const handleUpdatedMessage = async (payload: any) => {
-        const { data: fullMessage, error } = await supabase
-          .from("messages")
-          .select(FULL_MESSAGE_SELECT_QUERY)
-          .eq("id", payload.new.id)
-          .single()
-        
-        if (error || !fullMessage) return;
-        
-        // We find the message in our local state and replace it with the updated version.
-        setMessages(current => current.map(m => m.id === payload.new.id ? fullMessage as Message : m));
+        console.log('Message updated:', payload.new.id);
+        try {
+          const { data: fullMessage, error } = await supabase
+            .from("messages")
+            .select(FULL_MESSAGE_SELECT_QUERY)
+            .eq("id", payload.new.id)
+            .single()
+          
+          if (error) {
+            console.error('Failed to fetch updated message:', error);
+            return;
+          }
+
+          if (!fullMessage) {
+            console.warn('No updated message data returned for ID:', payload.new.id);
+            return;
+          }
+          
+          // We find the message in our local state and replace it with the updated version.
+          setMessages(current => current.map(m => m.id === payload.new.id ? fullMessage as Message : m));
+        } catch (error) {
+          console.error('Error handling updated message:', error);
+        }
     }
 
     // Here, we subscribe to the Supabase channel for our specific chat.
@@ -151,22 +189,30 @@ export default function ChatPage() {
         table: 'messages',
         filter: `chat_id=eq.${chatId}`
        }, handleUpdatedMessage)
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`Chat ${chatId} subscription status:`, status);
+      });
 
     // The cleanup function is crucial. It unsubscribes from the channel when the user
     // navigates away from this chat, preventing memory leaks and unnecessary background updates.
     return () => {
+      console.log('Cleaning up real-time subscription for chat:', chatId);
       supabase.removeChannel(channel);
     }
   }, [chatId, supabase, loggedInUser?.id]);
 
 
-  if (isLoading || !isAppReady || !chat) {
+  // Add validation for chatId
+  if (isNaN(chatId) || chatId <= 0) {
+    notFound()
+  }
+
+  if (isLoading || !isAppReady || !loggedInUser) {
     return <ChatPageLoading />
   }
 
-  if (!chat || !loggedInUser) {
-    notFound()
+  if (!chat) {
+    return <ChatPageLoading />
   }
 
   // Finally, we render the main ChatUI component, passing down all the necessary data and state.
