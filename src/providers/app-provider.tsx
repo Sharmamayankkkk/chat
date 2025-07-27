@@ -52,7 +52,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const dataLoadedForSession = useRef<string | null>(null)
-  const initAttemptedRef = useRef(false);
 
   const requestNotificationPermission = useCallback(async () => {
     if ("Notification" in window && Notification.permission === "default") {
@@ -79,7 +78,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
   
   const fetchInitialData = useCallback(async (user: AuthUser) => {
-    if (dataLoadedForSession.current === user.id) return;
+    if (dataLoadedForSession.current === user.id) {
+        if(!isReady) setIsReady(true);
+        return;
+    }
     
     try {
         dataLoadedForSession.current = user.id;
@@ -163,49 +165,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
             description: error.message || "Failed to load application data. Please try again.",
         });
     } finally {
-      setIsReady(true);
+      if (!isReady) setIsReady(true);
     }
-  }, [toast, requestNotificationPermission]);
+  }, [toast, requestNotificationPermission, isReady]);
   
   useEffect(() => {
-    const checkSession = async () => {
-      if (initAttemptedRef.current) return;
-      initAttemptedRef.current = true;
+    // This effect runs once on mount to check for an existing session and load data.
+    const checkInitialSession = async () => {
       try {
         const { data: { user } } = await supabaseRef.current.auth.getUser();
         if (user) {
           await fetchInitialData(user);
         } else {
-          setIsReady(true);
+          // If no user, the app is ready, just with no one logged in.
+          setIsReady(true); 
         }
       } catch (error) {
-        console.error("Error checking session:", error);
-        setIsReady(true);
+        console.error("Error checking initial session:", error);
+        // Ensure app becomes ready even if there's an error.
+        setIsReady(true); 
       }
     };
-    checkSession();
-  }, [fetchInitialData]);
 
-  useEffect(() => {
+    checkInitialSession();
+
+    // This listener handles dynamic auth changes (login/logout) after the initial load.
     const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
-        setSession(session);
-        if (event === "SIGNED_IN") {
-          const { data: { user } } = await supabaseRef.current.auth.getUser();
-          if (user) {
-            await fetchInitialData(user);
-          }
-        } else if (event === "SIGNED_OUT") {
-            router.push('/login');
-            resetState();
-            setIsReady(true);
+      setSession(session);
+      if (event === "SIGNED_IN") {
+        const { data: { user } } = await supabaseRef.current.auth.getUser();
+        if (user) {
+          await fetchInitialData(user);
         }
+      } else if (event === "SIGNED_OUT") {
+        router.push('/login');
+        resetState();
+      }
     });
 
     return () => {
-        authListener.subscription.unsubscribe();
+      authListener.subscription.unsubscribe();
     };
-  }, [fetchInitialData, resetState, router]);
-
+    // The dependency array is intentionally empty to ensure this runs only once on mount.
+    // Eslint will complain, but this is the correct pattern for this use case.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleNewMessage = useCallback(
     async (payload: RealtimePostgresChangesPayload<Message>) => {
