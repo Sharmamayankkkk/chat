@@ -70,6 +70,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     subscriptionsRef.current = []
   }, [])
 
+  const addChat = useCallback((newChat: Chat) => {
+    setChats((currentChats) => {
+      if (currentChats.some((c) => c.id === newChat.id)) return currentChats
+      return sortChats([newChat, ...currentChats])
+    })
+  }, [])
+  
   const fetchInitialData = useCallback(async (user: AuthUser) => {
     if (dataLoadedForSession.current === user.id) return;
     dataLoadedForSession.current = user.id;
@@ -154,7 +161,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
         await supabaseRef.current.auth.signOut();
     }
-  }, [toast, requestNotificationPermission]);
+  }, [toast, requestNotificationPermission, addChat]);
   
   useEffect(() => {
     const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
@@ -238,18 +245,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const channels = [
       supabaseRef.current.channel('public-messages-notifications')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => handleNewMessage(payload as any)),
+      
       supabaseRef.current.channel('participants-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, async () => {
-          if (session) await fetchInitialData(session.user)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, async (payload) => {
+            if (payload.eventType === 'DELETE') {
+                const chatId = (payload.old as { chat_id: number }).chat_id;
+                if (chatId) {
+                    setChats(current => current.filter(c => c.id !== chatId));
+                }
+            } else if (payload.eventType === 'INSERT') {
+                const chatId = (payload.new as { chat_id: number }).chat_id;
+                if (chatId && !chats.some(c => c.id === chatId)) {
+                    const { data } = await supabaseRef.current
+                        .from('chats')
+                        .select('*, participants:participants!chat_id(*, profiles!user_id(*))')
+                        .eq('id', chatId)
+                        .single();
+                    
+                    if (data) {
+                        addChat({...data, messages: [], unreadCount: 0} as any);
+                    }
+                }
+            }
         }),
+
       supabaseRef.current.channel('dm-requests-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, async () => {
-          if (session) await fetchInitialData(session.user)
+            if(session?.user) await fetchInitialData(session.user);
         }),
+
       supabaseRef.current.channel('blocked-users-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, async () => {
-          if (session) await fetchInitialData(session.user)
+             if(session?.user) await fetchInitialData(session.user);
         }),
+
       supabaseRef.current.channel('public:chats')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chats' }, payload => {
             setChats(current => current.map(c => c.id === payload.new.id ? {...c, ...payload.new} : c))
@@ -263,7 +292,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscriptionsRef.current.forEach((sub) => sub.unsubscribe());
       subscriptionsRef.current = [];
     };
-  }, [loggedInUser, session, handleNewMessage, fetchInitialData]);
+  }, [loggedInUser, session, handleNewMessage, fetchInitialData, addChat, chats]);
 
   const setThemeSettings = useCallback(async (newSettings: Partial<ThemeSettings>) => {
     if (!loggedInUser) return;
@@ -272,13 +301,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('themeSettings', JSON.stringify(updatedSettings));
     toast({ title: 'Theme settings updated locally.' });
   }, [loggedInUser, themeSettings, toast]);
-
-  const addChat = useCallback((newChat: Chat) => {
-    setChats((currentChats) => {
-      if (currentChats.some((c) => c.id === newChat.id)) return currentChats
-      return sortChats([newChat, ...currentChats])
-    })
-  }, [])
 
   const updateUser = useCallback(
     async (updates: Partial<User>) => {
@@ -293,14 +315,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const leaveGroup = useCallback(async (chatId: number) => {
     if (!loggedInUser) return
     const { error } = await supabaseRef.current.from("participants").delete().match({ chat_id: chatId, user_id: loggedInUser.id })
-    if (error) toast({ variant: "destructive", title: "Error leaving group", description: error.message })
-    else setChats(current => current.filter(c => c.id !== chatId));
+    if (error) {
+        toast({ variant: "destructive", title: "Error leaving group", description: error.message })
+    } else {
+        setChats(current => current.filter(c => c.id !== chatId));
+    }
   }, [loggedInUser, toast])
 
   const deleteGroup = useCallback(async (chatId: number) => {
     const { error } = await supabaseRef.current.from("chats").delete().eq("id", chatId)
-    if (error) toast({ variant: "destructive", title: "Error deleting group", description: error.message })
-    else setChats(current => current.filter(c => c.id !== chatId));
+    if (error) {
+        toast({ variant: "destructive", title: "Error deleting group", description: error.message })
+    } else {
+        setChats(current => current.filter(c => c.id !== chatId));
+    }
   }, [toast])
 
   const sendDmRequest = useCallback(async (toUserId: string, reason: string) => {
@@ -313,15 +341,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const blockUser = useCallback(async (userId: string) => {
     if (!loggedInUser) return
     const { error } = await supabaseRef.current.from("blocked_users").insert({ blocker_id: loggedInUser.id, blocked_id: userId })
-    if (error) toast({ variant: "destructive", title: "Error blocking user", description: error.message })
-    else setBlockedUsers(current => [...current, userId])
+    if (error) {
+      toast({ variant: "destructive", title: "Error blocking user", description: error.message })
+    } else {
+      toast({ title: "User Blocked" })
+      setBlockedUsers(current => [...current, userId])
+    }
   }, [loggedInUser, toast])
 
   const unblockUser = useCallback(async (userId: string) => {
     if (!loggedInUser) return
     const { error } = await supabaseRef.current.from("blocked_users").delete().match({ blocker_id: loggedInUser.id, blocked_id: userId })
-    if (error) toast({ variant: "destructive", title: "Error unblocking user", description: error.message })
-    else setBlockedUsers(current => current.filter(id => id !== userId))
+    if (error) {
+      toast({ variant: "destructive", title: "Error unblocking user", description: error.message })
+    } else {
+      toast({ title: "User Unblocked" })
+      setBlockedUsers(current => current.filter(id => id !== userId))
+    }
   }, [loggedInUser, toast])
 
   const reportUser = useCallback(async (reportedUserId: string, reason: string, messageId?: number) => {
