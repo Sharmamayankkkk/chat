@@ -3,133 +3,170 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Slider } from '@/components/ui/slider';
 import { Play, Pause } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { AttachmentMetadata } from '@/lib/types';
 
 interface VoiceNotePlayerProps {
   src: string;
   isMyMessage: boolean;
+  metadata: AttachmentMetadata | null;
 }
 
+// Helper to format time from seconds to a "m:ss" string.
 const formatTime = (timeInSeconds: number) => {
   const time = Math.floor(timeInSeconds);
-  if (isNaN(time)) return '0:00';
+  if (isNaN(time) || time < 0) return '0:00';
   const minutes = Math.floor(time / 60);
   const seconds = time % 60;
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 };
 
-export function VoiceNotePlayer({ src, isMyMessage }: VoiceNotePlayerProps) {
+export function VoiceNotePlayer({ src, isMyMessage, metadata }: VoiceNotePlayerProps) {
+  // `useRef` is a React hook to hold a reference to the actual <audio> DOM element.
   const audioRef = useRef<HTMLAudioElement>(null);
+  // `useState` hooks manage the component's state, causing it to re-render when state changes.
   const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1);
 
-  // This effect hook sets up and cleans up the audio event listeners.
-  // It runs whenever the audio source 'src' changes.
+  // Memoize the waveform and duration from metadata to prevent re-calculation on every render.
+  const { waveform, duration } = React.useMemo(() => ({
+      waveform: metadata?.waveform || [],
+      duration: metadata?.duration || 0,
+  }), [metadata]);
+
+  // This `useEffect` hook is crucial for managing the audio element's lifecycle.
+  // It runs once when the component mounts and sets up event listeners.
+  // The returned function is a "cleanup" function that runs when the component unmounts.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
-    // These functions update our component's state based on the audio element's events.
-    const setAudioData = () => {
-      if (isFinite(audio.duration)) {
-        setDuration(audio.duration);
-      }
-    };
-    const setAudioTime = () => setCurrentTime(audio.currentTime);
-    const handleEnd = () => setIsPlaying(false);
+    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const onEnd = () => setIsPlaying(false);
 
-    // We add event listeners to the audio element.
-    audio.addEventListener('loadedmetadata', setAudioData);
-    audio.addEventListener('durationchange', setAudioData);
-    audio.addEventListener('timeupdate', setAudioTime);
-    audio.addEventListener('ended', handleEnd);
-
-    // If the audio data is already loaded when this effect runs, we set the duration immediately.
-    if (audio.readyState > 0 && isFinite(audio.duration)) {
-      setDuration(audio.duration);
+    audio.addEventListener('timeupdate', onTimeUpdate);
+    audio.addEventListener('ended', onEnd);
+    
+    // Set initial state from the audio element in case it's already loaded.
+    if (!isNaN(audio.duration)) {
+      setCurrentTime(audio.currentTime);
     }
     
-    // Reset state when the source changes
-    setIsPlaying(false);
-    setCurrentTime(0);
-
-    // This is the cleanup function. It runs when the component is unmounted
-    // or before the effect runs again (e.g., if 'src' changes).
-    // This prevents memory leaks.
+    // Cleanup: remove event listeners when the component unmounts to prevent memory leaks.
     return () => {
-      audio.removeEventListener('loadedmetadata', setAudioData);
-      audio.removeEventListener('durationchange', setAudioData);
-      audio.removeEventListener('timeupdate', setAudioTime);
-      audio.removeEventListener('ended', handleEnd);
+      audio.removeEventListener('timeupdate', onTimeUpdate);
+      audio.removeEventListener('ended', onEnd);
     };
-  }, [src]); // The effect re-runs if 'src' changes.
+  }, []); // The empty dependency array `[]` means this effect runs only once on mount.
 
-  // Toggles playback. Pauses all other audio elements on the page.
-  const togglePlayPause = () => {
+  // This function handles playing and pausing the audio.
+  const togglePlayPause = useCallback(() => {
     const audio = audioRef.current;
-    if (audio) {
-      if (isPlaying) {
-        audio.pause();
-      } else {
-        // Pause any other playing audio on the page
-        document.querySelectorAll('audio').forEach(el => {
-            if (el !== audio) el.pause();
-        });
-        audio.play().catch(e => console.error("Error playing audio:", e));
-      }
-      setIsPlaying(!isPlaying);
+    if (!audio) return;
+
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+    } else {
+      // Before playing this audio, pause any other audio elements currently playing on the page.
+      document.querySelectorAll('audio').forEach(el => {
+        if (el !== audio) el.pause();
+      });
+      // The .play() method returns a Promise. We catch potential errors.
+      // This specifically handles the "request was interrupted" error.
+      audio.play().catch(e => console.error("Error playing audio:", e));
+      setIsPlaying(true);
     }
+  }, [isPlaying]);
+
+  // This function cycles through different playback speeds.
+  const togglePlaybackRate = useCallback(() => {
+    const rates = [1, 1.5, 2];
+    const currentIndex = rates.indexOf(playbackRate);
+    const nextIndex = (currentIndex + 1) % rates.length;
+    const newRate = rates[nextIndex];
+    if(audioRef.current) {
+        audioRef.current.playbackRate = newRate;
+    }
+    setPlaybackRate(newRate);
+  }, [playbackRate]);
+  
+  // This function allows the user to seek to a specific time by clicking on the waveform.
+  const handleSeek = (event: React.MouseEvent<HTMLDivElement>) => {
+    const audio = audioRef.current;
+    if (!audio || !duration) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const clickPosition = event.clientX - rect.left;
+    const clickRatio = clickPosition / rect.width;
+    const newTime = clickRatio * duration;
+    
+    audio.currentTime = newTime;
+    setCurrentTime(newTime);
   };
   
-  // This function is called when the user drags or clicks on the slider.
-  // It allows "scrubbing" to a specific point in the audio.
-  const handleSliderChange = (value: number[]) => {
-      if(audioRef.current) {
-          const newTime = value[0];
-          audioRef.current.currentTime = newTime;
-          setCurrentTime(newTime);
-      }
-  };
-
-  const remainingTime = duration - currentTime;
+  // Calculate the progress of the playback as a percentage.
+  const progressPercentage = duration ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div className="flex items-center gap-3 w-full max-w-[250px] py-1">
+    <div className="flex items-center gap-2 sm:gap-3 w-full max-w-xs sm:max-w-sm">
       <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
+      
       <Button 
         variant="ghost" 
         size="icon" 
-        className={cn("h-10 w-10 flex-shrink-0 rounded-full", 
-            isMyMessage ? "bg-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/30" : "bg-secondary-foreground/10 text-secondary-foreground hover:bg-secondary-foreground/20"
+        className={cn(
+          "h-10 w-10 flex-shrink-0 rounded-full", 
+          isMyMessage 
+            ? "bg-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/30" 
+            : "bg-secondary-foreground/10 text-secondary-foreground hover:bg-secondary-foreground/20"
         )} 
         onClick={togglePlayPause}
       >
         {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 fill-current" />}
       </Button>
-      <div className="flex flex-col gap-1.5 w-full">
-        <Slider
-          value={[currentTime]}
-          onValueChange={handleSliderChange}
-          max={duration || 1}
-          step={0.1}
-          className={cn(
-            "[&>span:first-child]:h-1", // Track
-            "[&>span:first-child>span]:h-1", // Range
-            "[&>span>[role=slider]]:h-3 [&>span>[role=slider]]:w-3 [&>span>[role=slider]]:border-0", // Thumb
-            isMyMessage 
-              ? "[&>span>span]:bg-primary-foreground [&>span>[role=slider]]:bg-primary-foreground [&>span:first-child]:bg-primary-foreground/30"
-              : "[&>span>span]:bg-primary [&>span>[role=slider]]:bg-primary [&>span:first-child]:bg-secondary-foreground/20"
-          )}
-        />
-        <span className={cn(
-          "text-xs font-mono w-full text-right self-end",
-          isMyMessage ? "text-primary-foreground/70" : "text-muted-foreground"
+
+      <div className="flex flex-col flex-1 gap-1 w-full min-w-0">
+        <div className="flex items-center gap-1.5 h-8 w-full" onClick={handleSeek}>
+          {waveform.map((height, index) => {
+            const barProgress = (index / waveform.length) * 100;
+            const isPlayed = barProgress < progressPercentage;
+            return (
+              <div 
+                key={index} 
+                className="w-full h-full rounded-full transition-colors duration-75"
+                style={{
+                  height: `${height * 100}%`,
+                  minHeight: '4px',
+                  backgroundColor: isMyMessage 
+                    ? (isPlayed ? 'hsl(var(--primary-foreground))' : 'hsla(var(--primary-foreground), 0.3)')
+                    : (isPlayed ? 'hsl(var(--primary))' : 'hsl(var(--border))')
+                }}
+              />
+            );
+          })}
+        </div>
+        <div className="flex items-center justify-between">
+          <span className={cn(
+            "text-xs font-mono w-full self-end",
+            isMyMessage ? "text-primary-foreground/70" : "text-muted-foreground"
           )}>
-          {formatTime(remainingTime)}
-        </span>
+            {formatTime(currentTime)} / {formatTime(duration)}
+          </span>
+          <button 
+             onClick={togglePlaybackRate} 
+             className={cn(
+                "text-xs font-semibold rounded-full w-9 h-5 flex items-center justify-center transition",
+                isMyMessage 
+                    ? "bg-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/40" 
+                    : "bg-secondary text-secondary-foreground hover:bg-accent"
+             )}
+            >
+              {playbackRate}x
+          </button>
+        </div>
       </div>
     </div>
   );

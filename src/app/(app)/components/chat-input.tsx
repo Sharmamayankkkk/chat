@@ -152,7 +152,7 @@ export function ChatInput({
     }, []);
 
     // The main function for sending a message. It handles both text and attachments.
-    const handleSendMessage = async ({ content, contentToSave, attachment }: { content: string, contentToSave?: string, attachment?: { file: File, url: string }}) => {
+    const handleSendMessage = async ({ content, contentToSave, attachment }: { content: string, contentToSave?: string, attachment?: { file: File, url: string, waveform?: number[], duration?: number }}) => {
         if (isSending || (content.trim() === '' && !attachment)) return;
         
         setIsSending(true);
@@ -160,6 +160,16 @@ export function ChatInput({
         // instantly while the real message is being sent to the server. This is called "optimistic UI".
         const tempId = `temp-${uuidv4()}`;
         
+        const attachmentMetadata = attachment 
+            ? { 
+                name: attachment.file.name, 
+                type: attachment.file.type, 
+                size: attachment.file.size,
+                waveform: attachment.waveform,
+                duration: attachment.duration,
+            } 
+            : null;
+
         const optimisticMessage: Message = {
           id: tempId,
           created_at: new Date().toISOString(),
@@ -167,7 +177,7 @@ export function ChatInput({
           user_id: loggedInUser.id,
           content: content.trim(),
           attachment_url: attachment ? attachment.url : null,
-          attachment_metadata: attachment ? { name: attachment.file.name, type: attachment.file.type, size: attachment.file.size } : null,
+          attachment_metadata: attachmentMetadata,
           reply_to_message_id: replyingTo?.id,
           profiles: loggedInUser,
           replied_to_message: replyingTo,
@@ -188,7 +198,6 @@ export function ChatInput({
         try {
             // If there's an attachment, upload it to Supabase Storage first.
             let attachmentUrl: string | null = null;
-            let attachmentMetadata: AttachmentMetadata | null = null;
             if (attachment) {
                 const file = attachment.file;
                 const fileExt = file.name.split('.').pop();
@@ -205,7 +214,6 @@ export function ChatInput({
                     .getPublicUrl(filePath);
                 
                 attachmentUrl = urlData.publicUrl;
-                attachmentMetadata = { name: file.name, type: file.type, size: file.size };
             }
             
             // Now, insert the final message data into the 'messages' table in the database.
@@ -341,6 +349,31 @@ export function ChatInput({
         if (event.target) event.target.value = '';
     };
 
+    const processAudio = async (audioBlob: Blob): Promise<{ duration: number; waveform: number[] }> => {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        const duration = audioBuffer.duration;
+        
+        const rawData = audioBuffer.getChannelData(0);
+        const samples = 64; // Number of waveform bars
+        const blockSize = Math.floor(rawData.length / samples);
+        const waveform = [];
+        for (let i = 0; i < samples; i++) {
+            let sum = 0;
+            for (let j = 0; j < blockSize; j++) {
+                sum += Math.abs(rawData[i * blockSize + j]);
+            }
+            waveform.push(sum / blockSize);
+        }
+
+        // Normalize waveform data
+        const max = Math.max(...waveform);
+        const normalizedWaveform = waveform.map(v => Math.max(0.05, v / max));
+
+        return { duration, waveform: normalizedWaveform };
+    };
+
     // Voice recording logic using the browser's MediaRecorder API.
     const handleStartRecording = async () => {
         try {
@@ -356,7 +389,18 @@ export function ChatInput({
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 const audioFile = new File([audioBlob], `voice-note-${Date.now()}.webm`, { type: 'audio/webm' });
                 const optimisticUrl = URL.createObjectURL(audioBlob);
-                await handleSendMessage({ content: '', attachment: { file: audioFile, url: optimisticUrl } });
+
+                const { duration, waveform } = await processAudio(audioBlob);
+
+                await handleSendMessage({ 
+                    content: '', 
+                    attachment: { 
+                        file: audioFile, 
+                        url: optimisticUrl,
+                        duration,
+                        waveform,
+                    } 
+                });
                 
                 stream.getTracks().forEach(track => track.stop());
                 if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
@@ -678,20 +722,24 @@ export function ChatInput({
     if (isRecording) {
         return (
             <div className="p-2 border-t bg-background shrink-0">
-                <div className="flex items-center w-full gap-2">
-                    <Button variant="ghost" size="icon" className="text-destructive" onClick={handleCancelRecording}>
-                        <Trash2 />
+                 <div className="flex items-center w-full gap-2 bg-muted p-2 rounded-lg">
+                    <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={handleCancelRecording}>
+                        <Trash2 className="h-5 w-5" />
                         <span className="sr-only">Cancel recording</span>
                     </Button>
-                    <div className="flex-1 bg-muted rounded-full h-10 flex items-center px-4 gap-2">
-                        <div className="w-2.5 h-2.5 bg-destructive rounded-full animate-pulse"></div>
+
+                    <div className="flex-1 flex items-center justify-between gap-2">
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleTogglePauseResume}>
                             {recordingStatus === 'paused' ? <Play className="fill-current" /> : <Pause />}
                             <span className="sr-only">{recordingStatus === 'paused' ? 'Resume' : 'Pause'} recording</span>
                         </Button>
-                        <span className="text-sm font-mono text-muted-foreground">{formatRecordingTime(recordingTime)}</span>
+                        <div className="flex items-center gap-2">
+                             <div className="w-2.5 h-2.5 bg-destructive rounded-full animate-pulse"></div>
+                             <span className="text-sm font-mono text-muted-foreground">{formatRecordingTime(recordingTime)}</span>
+                        </div>
                     </div>
-                    <Button size="icon" className="h-10 w-10" onClick={handleStopAndSendRecording}>
+                   
+                    <Button size="icon" className="h-10 w-10 bg-green-500 hover:bg-green-600" onClick={handleStopAndSendRecording}>
                         <Send />
                         <span className="sr-only">Send recording</span>
                     </Button>
@@ -713,7 +761,7 @@ export function ChatInput({
                     </div>
                     <DialogFooter>
                         <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
-                        <Button onClick={() => handleSendMessage({ content: caption, attachment: attachmentPreview! })} disabled={isSending}>
+                        <Button onClick={() => attachmentPreview && handleSendMessage({ content: caption, attachment: { file: attachmentPreview.file, url: attachmentPreview.url } })} disabled={isSending}>
                             {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />} Send
                         </Button>
                     </DialogFooter>

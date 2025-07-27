@@ -1,6 +1,5 @@
 
 
-
 // Matches public.profiles table
 export type User = {
   id: string; // uuid
@@ -33,6 +32,9 @@ export type AttachmentMetadata = {
   image?: string;
   icon?: string;
   url?: string;
+  // Voice Notes
+  duration?: number;
+  waveform?: number[];
 };
 
 // Matches public.messages table, with sender profile joined
@@ -166,5 +168,3 @@ export interface AppContextType {
   isReady: boolean
   resetUnreadCount: (chatId: number) => void
 }
-
-    
