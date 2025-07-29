@@ -75,26 +75,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dataLoadedForSession.current = user.id;
 
     try {
-        let profile: User | null = null;
-        // Retry logic for fetching profile which might not be available immediately after signup
-        for (let i = 0; i < 5; i++) {
-          const { data, error } = await supabaseRef.current
+        const { data: profile, error: profileError } = await supabaseRef.current
             .from("profiles")
             .select("*")
             .eq("id", user.id)
             .single();
-          
-          if (error && error.code !== 'PGRST116') throw error;
-          
-          if (data) {
-            profile = data as User;
-            break;
-          }
-          await new Promise(res => setTimeout(res, 300 * (i + 1)));
-        }
 
-        if (!profile) {
-            console.error("Failed to fetch profile after multiple attempts.");
+        if (profileError || !profile) {
+            console.error("Failed to fetch profile:", profileError);
             throw new Error("Could not fetch user profile. Please try logging in again.");
         }
         
@@ -128,7 +116,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 .select('*, participants:participants!chat_id(*, profiles!user_id(*))')
                 .in('id', chatIds);
             
-            const initialChats = (chatsData || []).map(c => ({...c, messages: [], unreadCount: 0})) as Chat[];
+            const initialChats = (chatsData || []).map(c => ({...c, messages: [], unreadCount: 0})) as Chat;
             setChats(initialChats);
 
             const { data: lastMessages } = await supabaseRef.current.rpc('get_last_messages_for_chats', { p_chat_ids: chatIds });
@@ -148,7 +136,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         await requestNotificationPermission();
     } catch (error: any) {
-        dataLoadedForSession.current = null; // Allow retry on next load
         toast({
             variant: "destructive",
             title: "Error Loading Data",
@@ -161,30 +148,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // This effect now robustly handles the initial app load and page refreshes.
     const initializeApp = async () => {
-        try {
-            // supabase.auth.getUser() securely validates the session with the server.
-            const { data: { user } } = await supabaseRef.current.auth.getUser();
+        // supabase.auth.getUser() securely validates the session with the server.
+        const { data: { user } } = await supabaseRef.current.auth.getUser();
 
-            if (user) {
-                await fetchInitialData(user);
+        if (user) {
+            // This is the key change: if we have a user from a cookie but the app isn't
+            // fully loaded (i.e., no loggedInUser in state), it means it's a refresh.
+            // We forcefully sign out to ensure a clean state, then redirect to login.
+            if (!loggedInUser) {
+                await supabaseRef.current.auth.signOut();
+                router.push('/login');
+                setIsReady(true);
+                return;
             }
-        } catch (error) {
-            console.error("Error during app initialization:", error);
-            toast({
-                variant: 'destructive',
-                title: 'Initialization Error',
-                description: 'There was a problem starting the app. Please try again.'
-            });
-        } finally {
-            // This is crucial: always set the app to ready to prevent infinite loaders.
-            setIsReady(true);
+            // If loggedInUser already exists, we trust the state and do nothing.
         }
+        // If there's no user at all, we're definitely not logged in.
+        setIsReady(true);
     };
     
     initializeApp();
 
-    // The onAuthStateChange listener is now only for live events (login/logout)
-    // after the initial load is complete.
+    // The onAuthStateChange listener is for live events (login/logout).
     const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
         setSession(session);
         if (event === "SIGNED_IN") {
@@ -201,7 +186,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
         authListener.subscription.unsubscribe();
     };
-    // The dependency array is empty to ensure this initialization logic runs only once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
