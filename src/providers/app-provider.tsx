@@ -70,23 +70,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     subscriptionsRef.current = []
   }, [])
 
-  const addChat = useCallback((newChat: Chat) => {
-    setChats((currentChats) => {
-      if (currentChats.some((c) => c.id === newChat.id)) return currentChats
-      return sortChats([newChat, ...currentChats])
-    })
-  }, [])
-  
   const fetchInitialData = useCallback(async (user: AuthUser) => {
-    if (dataLoadedForSession.current === user.id) {
-        if(!isReady) setIsReady(true);
-        return;
-    }
-    
-    try {
-        dataLoadedForSession.current = user.id;
+    if (dataLoadedForSession.current === user.id) return;
+    dataLoadedForSession.current = user.id;
 
+    try {
         let profile: User | null = null;
+        // Retry logic for fetching profile which might not be available immediately after signup
         for (let i = 0; i < 5; i++) {
           const { data, error } = await supabaseRef.current
             .from("profiles")
@@ -158,58 +148,63 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         await requestNotificationPermission();
     } catch (error: any) {
-        dataLoadedForSession.current = null;
+        dataLoadedForSession.current = null; // Allow retry on next load
         toast({
             variant: "destructive",
             title: "Error Loading Data",
             description: error.message || "Failed to load application data. Please try again.",
         });
-    } finally {
-      if (!isReady) setIsReady(true);
+        await supabaseRef.current.auth.signOut();
     }
-  }, [toast, requestNotificationPermission, isReady]);
+  }, [toast, requestNotificationPermission]);
   
   useEffect(() => {
-    // This effect runs once on mount to check for an existing session and load data.
-    const checkInitialSession = async () => {
-      try {
-        const { data: { user } } = await supabaseRef.current.auth.getUser();
-        if (user) {
-          await fetchInitialData(user);
-        } else {
-          // If no user, the app is ready, just with no one logged in.
-          setIsReady(true); 
+    // This effect now robustly handles the initial app load and page refreshes.
+    const initializeApp = async () => {
+        try {
+            // supabase.auth.getUser() securely validates the session with the server.
+            const { data: { user } } = await supabaseRef.current.auth.getUser();
+
+            if (user) {
+                await fetchInitialData(user);
+            }
+        } catch (error) {
+            console.error("Error during app initialization:", error);
+            toast({
+                variant: 'destructive',
+                title: 'Initialization Error',
+                description: 'There was a problem starting the app. Please try again.'
+            });
+        } finally {
+            // This is crucial: always set the app to ready to prevent infinite loaders.
+            setIsReady(true);
         }
-      } catch (error) {
-        console.error("Error checking initial session:", error);
-        // Ensure app becomes ready even if there's an error.
-        setIsReady(true); 
-      }
     };
+    
+    initializeApp();
 
-    checkInitialSession();
-
-    // This listener handles dynamic auth changes (login/logout) after the initial load.
+    // The onAuthStateChange listener is now only for live events (login/logout)
+    // after the initial load is complete.
     const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
-      setSession(session);
-      if (event === "SIGNED_IN") {
-        const { data: { user } } = await supabaseRef.current.auth.getUser();
-        if (user) {
-          await fetchInitialData(user);
+        setSession(session);
+        if (event === "SIGNED_IN") {
+            const { data: { user } } = await supabaseRef.current.auth.getUser();
+            if (user) {
+                await fetchInitialData(user);
+            }
+        } else if (event === "SIGNED_OUT") {
+            router.push('/login');
+            resetState();
         }
-      } else if (event === "SIGNED_OUT") {
-        router.push('/login');
-        resetState();
-      }
     });
 
     return () => {
-      authListener.subscription.unsubscribe();
+        authListener.subscription.unsubscribe();
     };
-    // The dependency array is intentionally empty to ensure this runs only once on mount.
-    // Eslint will complain, but this is the correct pattern for this use case.
+    // The dependency array is empty to ensure this initialization logic runs only once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
 
   const handleNewMessage = useCallback(
     async (payload: RealtimePostgresChangesPayload<Message>) => {
@@ -270,42 +265,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const channels = [
       supabaseRef.current.channel('public-messages-notifications')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => handleNewMessage(payload as any)),
-      
       supabaseRef.current.channel('participants-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, async (payload) => {
-            if (payload.eventType === 'DELETE') {
-                const oldRecord = payload.old as { chat_id: number };
-                if (oldRecord.chat_id) {
-                    setChats(current => current.filter(c => c.id !== oldRecord.chat_id));
-                }
-            } else if (payload.eventType === 'INSERT') {
-                const newRecord = payload.new as { chat_id: number };
-                if (newRecord.chat_id && !chats.some(c => c.id === newRecord.chat_id)) {
-                    const { data } = await supabaseRef.current
-                        .from('chats')
-                        .select('*, participants:participants!chat_id(*, profiles!user_id(*))')
-                        .eq('id', newRecord.chat_id)
-                        .single();
-                    
-                    if (data) {
-                        addChat({...data, messages: [], unreadCount: 0} as any);
-                    }
-                }
-            }
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, async () => {
+          if (session) {
+            const { data: { user } } = await supabaseRef.current.auth.getUser();
+            if (user) await fetchInitialData(user);
+          }
         }),
-
       supabaseRef.current.channel('dm-requests-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, async () => {
+          if (session) {
             const { data: { user } } = await supabaseRef.current.auth.getUser();
-            if(user) await fetchInitialData(user);
+            if (user) await fetchInitialData(user);
+          }
         }),
-
       supabaseRef.current.channel('blocked-users-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, async () => {
+          if (session) {
             const { data: { user } } = await supabaseRef.current.auth.getUser();
-            if(user) await fetchInitialData(user);
+            if (user) await fetchInitialData(user);
+          }
         }),
-
       supabaseRef.current.channel('public:chats')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chats' }, payload => {
             setChats(current => current.map(c => c.id === payload.new.id ? {...c, ...payload.new} : c))
@@ -319,7 +299,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscriptionsRef.current.forEach((sub) => sub.unsubscribe());
       subscriptionsRef.current = [];
     };
-  }, [loggedInUser, session, handleNewMessage, fetchInitialData, addChat, chats]);
+  }, [loggedInUser, session, handleNewMessage, fetchInitialData]);
 
   const setThemeSettings = useCallback(async (newSettings: Partial<ThemeSettings>) => {
     if (!loggedInUser) return;
@@ -328,6 +308,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('themeSettings', JSON.stringify(updatedSettings));
     toast({ title: 'Theme settings updated locally.' });
   }, [loggedInUser, themeSettings, toast]);
+
+  const addChat = useCallback((newChat: Chat) => {
+    setChats((currentChats) => {
+      if (currentChats.some((c) => c.id === newChat.id)) return currentChats
+      return sortChats([newChat, ...currentChats])
+    })
+  }, [])
 
   const updateUser = useCallback(
     async (updates: Partial<User>) => {
