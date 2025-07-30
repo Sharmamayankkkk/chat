@@ -102,7 +102,7 @@ cd krishna-connect
 ### 2. Set Up Supabase
 
 1.  **Create a Supabase Project**: Go to [supabase.com](https://supabase.com), create a new project, and save your **Project URL** and `public` **anon key**. You'll find these in your project's *Settings > API*.
-2.  **Database Schema**: Go to the **SQL Editor** in your Supabase project dashboard. Copy the entire contents of `supabase/schema.sql` from this repository and run it to set up your database tables, policies, and functions.
+2.  **Run the Database Schema**: Go to the **SQL Editor** in your Supabase project dashboard. Copy the entire contents of `supabase/schema.sql` from this repository and run it to set up your database tables, custom types, functions, and security policies. **This is a critical step.**
 3.  **Clean Database (Optional)**: To start with a clean slate at any time, you can run the script in `supabase/reset.sql` in the SQL Editor. **Warning: This will delete all data.**
 4.  **Enable OAuth Providers (Optional)**: If you want to use Google or Facebook login, you'll need to enable them in *Authentication > Providers* in your Supabase dashboard and add your OAuth credentials.
 
@@ -133,15 +133,11 @@ Install the project dependencies using npm:
 npm install
 ```
 
-Now, you need to run two processes in separate terminals:
-1.  **The main Next.js app:**
-    ```bash
-    npm run dev
-    ```
-2.  **The Genkit AI development server:**
-    ```bash
-    npm run genkit:dev
-    ```
+Now, you can run the development server:
+
+```bash
+npm run dev
+```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result. You're all set to start developing!
 
@@ -176,3 +172,4 @@ Distributed under the MIT License. See `LICENSE` for more information.
 - [Supabase](https://supabase.com/) for their incredible backend-as-a-service platform.
 - [Vercel](https://vercel.com/) for making deployment seamless.
 - All the devotees and well-wishers who inspire this project.
+```

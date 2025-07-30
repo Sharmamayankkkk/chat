@@ -51,7 +51,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast()
   const router = useRouter()
   const pathname = usePathname()
-  const dataLoadedForSession = useRef<string | null>(null)
 
   const requestNotificationPermission = useCallback(async () => {
     if ("Notification" in window && Notification.permission === "default") {
@@ -65,42 +64,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAllUsers([])
     setDmRequests([])
     setBlockedUsers([])
-    dataLoadedForSession.current = null
     subscriptionsRef.current.forEach(sub => sub.unsubscribe())
     subscriptionsRef.current = []
   }, [])
 
   const fetchInitialData = useCallback(async (user: AuthUser) => {
-    if (dataLoadedForSession.current === user.id) return;
-    dataLoadedForSession.current = user.id;
-
     try {
-        let profile: User | null = null;
-        for (let i = 0; i < 5; i++) {
-          const { data, error } = await supabaseRef.current
+        const { data: profile, error: profileError } = await supabaseRef.current
             .from("profiles")
             .select("*")
             .eq("id", user.id)
             .single();
-          
-          if (error && error.code !== 'PGRST116') throw error;
-          
-          if (data) {
-            profile = data as User;
-            break;
-          }
-          await new Promise(res => setTimeout(res, 300 * (i + 1)));
-        }
 
-        if (!profile) {
-            console.error("Failed to fetch profile after multiple attempts.");
-            throw new Error("Could not fetch user profile. Please try logging in again.");
+        if (profileError || !profile) {
+            console.error("Failed to fetch profile:", profileError);
+            toast({ variant: "destructive", title: "Authentication Error", description: "Could not fetch your profile. Please log in again." });
+            await supabaseRef.current.auth.signOut();
+            return;
         }
         
         const fullUserProfile = { ...profile, email: user.email } as User;
         const savedTheme = localStorage.getItem('themeSettings');
         if (savedTheme) {
-          setThemeSettingsState(JSON.parse(savedTheme));
+          try {
+            const parsedTheme = JSON.parse(savedTheme);
+            setThemeSettingsState(current => ({...current, ...parsedTheme}));
+          } catch(e) {
+            console.error("Failed to parse theme settings from localStorage", e);
+          }
         }
         setLoggedInUser(fullUserProfile);
 
@@ -127,7 +118,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 .select('*, participants:participants!chat_id(*, profiles!user_id(*))')
                 .in('id', chatIds);
             
-            const initialChats = (chatsData || []).map(c => ({...c, messages: [], unreadCount: 0})) as Chat[];
+            const initialChats = (chatsData || []).map(c => ({...c, messages: [], unreadCount: 0})) as Chat;
             setChats(initialChats);
 
             const { data: lastMessages } = await supabaseRef.current.rpc('get_last_messages_for_chats', { p_chat_ids: chatIds });
@@ -157,26 +148,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [toast, requestNotificationPermission]);
   
   useEffect(() => {
-    const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(async (event, session) => {
+    const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(
+      async (event, session) => {
         setSession(session);
-        if (event === "SIGNED_IN") {
-            if (session?.user) {
-                await fetchInitialData(session.user);
-            }
-        } else if (event === "SIGNED_OUT") {
-            router.push('/login');
-            resetState();
+        if (event === "SIGNED_OUT") {
+          resetState();
+          setIsReady(true);
+          router.push('/login');
+          return;
+        }
+
+        if (session) {
+          // This handles both INITIAL_SESSION and SIGNED_IN
+          await fetchInitialData(session.user);
         }
         
+        // This is the key: only mark as ready after the first auth event has been processed.
+        // If there's no session, it will still mark as ready and the middleware will redirect.
         if (!isReady) {
-          setIsReady(true);
+            setIsReady(true);
         }
-    });
-
+      }
+    );
+  
     return () => {
-        authListener.subscription.unsubscribe();
+      authListener.subscription.unsubscribe();
+      subscriptionsRef.current.forEach((sub) => sub.unsubscribe());
+      subscriptionsRef.current = [];
     };
-  }, [fetchInitialData, resetState, router, isReady]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchInitialData, resetState, router]);
 
 
   const handleNewMessage = useCallback(
@@ -240,15 +241,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => handleNewMessage(payload as any)),
       supabaseRef.current.channel('participants-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, async () => {
-          if (session) await fetchInitialData(session.user)
+          if (session) await fetchInitialData(session.user);
         }),
       supabaseRef.current.channel('dm-requests-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, async () => {
-          if (session) await fetchInitialData(session.user)
+          if (session) await fetchInitialData(session.user);
         }),
       supabaseRef.current.channel('blocked-users-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, async () => {
-          if (session) await fetchInitialData(session.user)
+          if (session) await fetchInitialData(session.user);
         }),
       supabaseRef.current.channel('public:chats')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chats' }, payload => {
@@ -259,10 +260,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     channels.forEach(c => c.subscribe());
     subscriptionsRef.current = channels;
 
-    return () => {
-      subscriptionsRef.current.forEach((sub) => sub.unsubscribe());
-      subscriptionsRef.current = [];
-    };
   }, [loggedInUser, session, handleNewMessage, fetchInitialData]);
 
   const setThemeSettings = useCallback(async (newSettings: Partial<ThemeSettings>) => {
@@ -284,21 +281,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (updates: Partial<User>) => {
       if (!loggedInUser) return
       const { error } = await supabaseRef.current.from("profiles").update({ name: updates.name, username: updates.username, bio: updates.bio, avatar_url: updates.avatar_url }).eq("id", loggedInUser.id)
-      if (error) toast({ variant: "destructive", title: "Error updating profile", description: error.message })
-      else setLoggedInUser(current => ({ ...current!, ...updates }))
+      if (error) {
+        toast({ variant: "destructive", title: "Error updating profile", description: error.message });
+      } else {
+        setLoggedInUser(current => ({ ...current!, ...updates }));
+        setAllUsers(current => current.map(u => u.id === loggedInUser.id ? { ...u, ...updates } : u));
+      }
     },
     [loggedInUser, toast],
   )
 
   const leaveGroup = useCallback(async (chatId: number) => {
-    if (!loggedInUser) return
+    if (!loggedInUser) return;
     const { error } = await supabaseRef.current.from("participants").delete().match({ chat_id: chatId, user_id: loggedInUser.id })
-    if (error) toast({ variant: "destructive", title: "Error leaving group", description: error.message })
+    if (error) {
+        toast({ variant: "destructive", title: "Error leaving group", description: error.message })
+    } else {
+        setChats(current => current.filter(c => c.id !== chatId));
+    }
   }, [loggedInUser, toast])
 
   const deleteGroup = useCallback(async (chatId: number) => {
     const { error } = await supabaseRef.current.from("chats").delete().eq("id", chatId)
-    if (error) toast({ variant: "destructive", title: "Error deleting group", description: error.message })
+    if (error) {
+        toast({ variant: "destructive", title: "Error deleting group", description: error.message })
+    } else {
+        setChats(current => current.filter(c => c.id !== chatId));
+    }
   }, [toast])
 
   const sendDmRequest = useCallback(async (toUserId: string, reason: string) => {
@@ -309,17 +318,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [loggedInUser, toast])
 
   const blockUser = useCallback(async (userId: string) => {
-    if (!loggedInUser) return
+    if (!loggedInUser) return;
     const { error } = await supabaseRef.current.from("blocked_users").insert({ blocker_id: loggedInUser.id, blocked_id: userId })
-    if (error) toast({ variant: "destructive", title: "Error blocking user", description: error.message })
-    else toast({ title: "User Blocked" })
+    if (error) {
+      toast({ variant: "destructive", title: "Error blocking user", description: error.message })
+    } else {
+      toast({ title: "User Blocked" })
+      setBlockedUsers(current => [...current, userId])
+    }
   }, [loggedInUser, toast])
 
   const unblockUser = useCallback(async (userId: string) => {
-    if (!loggedInUser) return
+    if (!loggedInUser) return;
     const { error } = await supabaseRef.current.from("blocked_users").delete().match({ blocker_id: loggedInUser.id, blocked_id: userId })
-    if (error) toast({ variant: "destructive", title: "Error unblocking user", description: error.message })
-    else toast({ title: "User Unblocked" })
+    if (error) {
+      toast({ variant: "destructive", title: "Error unblocking user", description: error.message })
+    } else {
+      toast({ title: "User Unblocked" })
+      setBlockedUsers(current => current.filter(id => id !== userId))
+    }
   }, [loggedInUser, toast])
 
   const reportUser = useCallback(async (reportedUserId: string, reason: string, messageId?: number) => {
@@ -383,5 +400,3 @@ export function useAppContext() {
   }
   return context
 }
-
-    
