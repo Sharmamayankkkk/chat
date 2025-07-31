@@ -1,34 +1,35 @@
 
-self.addEventListener('push', event => {
-  const data = event.data.json();
-  const title = data.title || 'New Message';
-  const options = {
-    body: data.body,
-    icon: data.icon || '/logo/light_KCS.png',
-    badge: '/logo/light_KCS.png',
-    tag: data.tag,
-    data: data.data,
-  };
-  event.waitUntil(self.registration.showNotification(title, options));
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());
 });
 
-self.addEventListener('notificationclick', event => {
-  const chatId = event.notification.data?.chatId;
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  
+  const chatId = event.notification.data?.chatId;
+  if (chatId) {
+    const urlToOpen = new URL(`/chat/${chatId}`, self.location.origin).href;
 
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
-      const urlToOpen = new URL(chatId ? `/chat/${chatId}` : '/', self.location.origin).href;
-
-      for (const client of clientList) {
-        if (client.url === urlToOpen && 'focus' in client) {
-          return client.focus();
+    event.waitUntil(
+      clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true
+      }).then((clientList) => {
+        if (clientList.length > 0) {
+          let client = clientList[0];
+          for (let i = 0; i < clientList.length; i++) {
+            if (clientList[i].focused) {
+              client = clientList[i];
+            }
+          }
+          return client.focus().then(c => c.navigate(urlToOpen));
         }
-      }
-
-      if (clients.openWindow) {
         return clients.openWindow(urlToOpen);
-      }
-    })
-  );
+      })
+    );
+  }
 });

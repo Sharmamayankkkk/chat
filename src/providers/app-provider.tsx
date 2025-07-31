@@ -51,7 +51,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast()
   const router = useRouter()
   const pathname = usePathname()
-  const dataLoadedForSession = useRef<string | null>(null)
 
   const requestNotificationPermission = useCallback(async () => {
     if ("Notification" in window && Notification.permission === "default") {
@@ -65,15 +64,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAllUsers([])
     setDmRequests([])
     setBlockedUsers([])
-    dataLoadedForSession.current = null
     subscriptionsRef.current.forEach(sub => sub.unsubscribe())
     subscriptionsRef.current = []
   }, [])
 
   const fetchInitialData = useCallback(async (user: AuthUser) => {
-    if (dataLoadedForSession.current === user.id) return;
-    dataLoadedForSession.current = user.id;
-
     try {
         const { data: profile, error: profileError } = await supabaseRef.current
             .from("profiles")
@@ -83,8 +78,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         if (profileError || !profile) {
             console.error("Failed to fetch profile:", profileError);
-            // This might happen in a race condition on signup.
-            // Let's sign out to be safe and force a re-login.
+            toast({ variant: "destructive", title: "Authentication Error", description: "Could not fetch your profile. Please log in again." });
             await supabaseRef.current.auth.signOut();
             return;
         }
@@ -124,23 +118,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 .select('*, participants:participants!chat_id(*, profiles!user_id(*))')
                 .in('id', chatIds);
             
-            const initialChats = (chatsData || []).map(c => ({...c, messages: [], unreadCount: 0})) as Chat;
-            setChats(initialChats);
+            const initialChats = (chatsData || []).map(c => ({...c, messages: [], unreadCount: 0})) as Chat[];
+            
+            // Client-side fetch for last messages
+            const lastMessagePromises = initialChats.map(chat => 
+                supabaseRef.current.from('messages')
+                    .select('content, created_at, attachment_metadata')
+                    .eq('chat_id', chat.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .single()
+            );
 
-            const { data: lastMessages } = await supabaseRef.current.rpc('get_last_messages_for_chats', { p_chat_ids: chatIds });
-            if (lastMessages) {
-                setChats(currentChats => {
-                    const chatsMap = new Map(currentChats.map(c => [c.id, c]));
-                    (lastMessages as any[]).forEach(msg => {
-                        const chat = chatsMap.get(msg.chat_id);
-                        if (chat) {
-                            chat.last_message_content = msg.content || msg.attachment_metadata?.name || 'No messages yet';
-                            chat.last_message_timestamp = msg.created_at;
-                        }
-                    });
-                    return sortChats(Array.from(chatsMap.values()));
-                });
-            }
+            const lastMessageResults = await Promise.all(lastMessagePromises);
+            
+            lastMessageResults.forEach((result, index) => {
+                const chat = initialChats[index];
+                if (result.data) {
+                    chat.last_message_content = result.data.content || result.data.attachment_metadata?.name || 'No messages yet';
+                    chat.last_message_timestamp = result.data.created_at;
+                }
+            });
+            
+            setChats(sortChats(initialChats));
         }
         await requestNotificationPermission();
     } catch (error: any) {
@@ -150,27 +150,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
             description: error.message || "Failed to load application data. Please try again.",
         });
         await supabaseRef.current.auth.signOut();
-    } finally {
-      if (!isReady) {
-        setIsReady(true);
-      }
     }
-  }, [toast, requestNotificationPermission, isReady]);
+  }, [toast, requestNotificationPermission]);
   
   useEffect(() => {
     const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(
       async (event, session) => {
         setSession(session);
-        // This handles user login, and also the initial session on page load.
-        if (session && (event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "USER_UPDATED")) {
-          await fetchInitialData(session.user);
-        } else if (event === "SIGNED_OUT") {
+        if (event === "SIGNED_OUT") {
           resetState();
-          router.push('/login');
-        }
-        // If we reach here and the app is not ready, it means there's no session.
-        if (!isReady) {
           setIsReady(true);
+          router.push('/login');
+          return;
+        }
+
+        if (session) {
+          await fetchInitialData(session.user);
+        }
+        
+        if (!isReady) {
+            setIsReady(true);
         }
       }
     );
@@ -263,7 +262,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     channels.forEach(c => c.subscribe());
     subscriptionsRef.current = channels;
 
-    // No return cleanup needed here because it's handled in the main auth effect
   }, [loggedInUser, session, handleNewMessage, fetchInitialData]);
 
   const setThemeSettings = useCallback(async (newSettings: Partial<ThemeSettings>) => {
@@ -289,7 +287,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toast({ variant: "destructive", title: "Error updating profile", description: error.message });
       } else {
         setLoggedInUser(current => ({ ...current!, ...updates }));
-        // Also update the user in the allUsers list
         setAllUsers(current => current.map(u => u.id === loggedInUser.id ? { ...u, ...updates } : u));
       }
     },
