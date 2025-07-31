@@ -120,27 +120,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
             
             const initialChats = (chatsData || []).map(c => ({...c, messages: [], unreadCount: 0})) as Chat[];
             
-            // Client-side fetch for last messages
-            const lastMessagePromises = initialChats.map(chat => 
-                supabaseRef.current.from('messages')
-                    .select('content, created_at, attachment_metadata')
-                    .eq('chat_id', chat.id)
-                    .order('created_at', { ascending: false })
-                    .limit(1)
-                    .single()
-            );
-
-            const lastMessageResults = await Promise.all(lastMessagePromises);
-            
-            lastMessageResults.forEach((result, index) => {
-                const chat = initialChats[index];
-                if (result.data) {
-                    chat.last_message_content = result.data.content || result.data.attachment_metadata?.name || 'No messages yet';
-                    chat.last_message_timestamp = result.data.created_at;
-                }
-            });
-            
-            setChats(sortChats(initialChats));
+            const { data: lastMessages } = await supabaseRef.current.rpc('get_last_messages_for_chats', { p_chat_ids: chatIds });
+            if (lastMessages) {
+                setChats(currentChats => {
+                    const chatsMap = new Map(initialChats.map(c => [c.id, c]));
+                    (lastMessages as any[]).forEach(msg => {
+                        const chat = chatsMap.get(msg.chat_id);
+                        if (chat) {
+                            chat.last_message_content = msg.content || msg.attachment_metadata?.name || 'No messages yet';
+                            chat.last_message_timestamp = msg.created_at;
+                        }
+                    });
+                    return sortChats(Array.from(chatsMap.values()));
+                });
+            } else {
+              setChats(sortChats(initialChats));
+            }
         }
         await requestNotificationPermission();
     } catch (error: any) {
@@ -165,9 +160,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         if (session) {
+          // This handles both INITIAL_SESSION and SIGNED_IN
           await fetchInitialData(session.user);
         }
         
+        // This is the key: only mark as ready after the first auth event has been processed.
+        // If there's no session, it will still mark as ready and the middleware will redirect.
         if (!isReady) {
             setIsReady(true);
         }
@@ -179,7 +177,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscriptionsRef.current.forEach((sub) => sub.unsubscribe());
       subscriptionsRef.current = [];
     };
-  }, [fetchInitialData, resetState, router, isReady]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchInitialData, resetState, router]);
 
 
   const handleNewMessage = useCallback(
