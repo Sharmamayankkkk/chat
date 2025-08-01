@@ -102,7 +102,9 @@ cd krishna-connect
 ### 2. Set Up Supabase
 
 1.  **Create a Supabase Project**: Go to [supabase.com](https://supabase.com), create a new project, and save your **Project URL** and `public` **anon key**. You'll find these in your project's *Settings > API*.
-2.  **Run the Database Schema**: Go to the **SQL Editor** in your Supabase project dashboard. Copy the entire contents of `supabase/schema.sql` from this repository and run it to set up your database tables, custom types, functions, and security policies. **This is a critical step.**
+2.  **Run the Database Schema & Functions**: Go to the **SQL Editor** in your Supabase project dashboard. 
+    - **First, copy the entire contents of `supabase/schema.sql`** from this repository and run it to set up your database tables, custom types, and security policies.
+    - **Second, copy the entire contents of `supabase/functions.sql`** and run it in the SQL Editor. This will create the necessary helper functions for features like message reactions and notifications.
 3.  **Clean Database (Optional)**: To start with a clean slate at any time, you can run the script in `supabase/reset.sql` in the SQL Editor. **Warning: This will delete all data.**
 4.  **Enable OAuth Providers (Optional)**: If you want to use Google or Facebook login, you'll need to enable them in *Authentication > Providers* in your Supabase dashboard and add your OAuth credentials.
 
