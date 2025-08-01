@@ -59,6 +59,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
   
   const resetState = useCallback(() => {
+    setSession(null)
     setLoggedInUser(null)
     setChats([])
     setAllUsers([])
@@ -122,17 +123,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
             
             const { data: lastMessages } = await supabaseRef.current.rpc('get_last_messages_for_chats', { p_chat_ids: chatIds });
             if (lastMessages) {
-                setChats(currentChats => {
-                    const chatsMap = new Map(initialChats.map(c => [c.id, c]));
-                    (lastMessages as any[]).forEach(msg => {
-                        const chat = chatsMap.get(msg.chat_id);
-                        if (chat) {
-                            chat.last_message_content = msg.content || msg.attachment_metadata?.name || 'No messages yet';
-                            chat.last_message_timestamp = msg.created_at;
-                        }
-                    });
-                    return sortChats(Array.from(chatsMap.values()));
+                const chatsMap = new Map(initialChats.map(c => [c.id, c]));
+                (lastMessages as any[]).forEach(msg => {
+                    const chat = chatsMap.get(msg.chat_id);
+                    if (chat) {
+                        chat.last_message_content = msg.content || msg.attachment_metadata?.name || 'No messages yet';
+                        chat.last_message_timestamp = msg.created_at;
+                    }
                 });
+                setChats(sortChats(Array.from(chatsMap.values())));
             } else {
               setChats(sortChats(initialChats));
             }
@@ -149,25 +148,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [toast, requestNotificationPermission]);
   
   useEffect(() => {
-    const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        if (event === "SIGNED_OUT") {
-          resetState();
-          setIsReady(true);
-          router.push('/login');
-          return;
-        }
-
-        if (session) {
-          // This handles both INITIAL_SESSION and SIGNED_IN
-          await fetchInitialData(session.user);
+    // This effect runs once on initial mount to check for a session
+    const initializeApp = async () => {
+        const { data: { session: currentSession } } = await supabaseRef.current.auth.getSession();
+        
+        if (currentSession) {
+            setSession(currentSession);
+            await fetchInitialData(currentSession.user);
         }
         
-        // This is the key: only mark as ready after the first auth event has been processed.
-        // If there's no session, it will still mark as ready and the middleware will redirect.
-        if (!isReady) {
-            setIsReady(true);
+        // Mark the app as ready only after the initial check is complete.
+        setIsReady(true);
+    };
+    
+    initializeApp();
+
+    // This listener only handles live auth events (login/logout) after the app is running.
+    const { data: authListener } = supabaseRef.current.auth.onAuthStateChange(
+      (event, newSession) => {
+        if (event === "SIGNED_OUT") {
+          resetState();
+          router.push('/login');
+        } else if (event === "SIGNED_IN") {
+          setSession(newSession);
+          if(newSession?.user) fetchInitialData(newSession.user);
         }
       }
     );
@@ -178,7 +182,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscriptionsRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchInitialData, resetState, router]);
+  }, []);
 
 
   const handleNewMessage = useCallback(
