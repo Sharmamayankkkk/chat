@@ -99,6 +99,8 @@ export default function ChatPage() {
   // *** THIS IS THE CORE OF THE REAL-TIME FIX ***
   // This `useEffect` hook sets up the real-time subscription for the current chat.
   useEffect(() => {
+    if (!chatId || !supabase) return;
+
     // This function will be called every time a new message is inserted into the database.
     const handleNewMessage = async (payload: any) => {
         // The payload only contains the basic new message. We need to fetch the full
@@ -121,7 +123,7 @@ export default function ChatPage() {
         });
     }
 
-    // This function handles real-time updates for edited messages.
+    // This function handles real-time updates for edited messages, reactions, pins, etc.
     const handleUpdatedMessage = async (payload: any) => {
         const { data: fullMessage, error } = await supabase
           .from("messages")
@@ -136,7 +138,7 @@ export default function ChatPage() {
     }
 
     // Here, we subscribe to the Supabase channel for our specific chat.
-    // We listen for both 'INSERT' (new messages) and 'UPDATE' (edited messages) events.
+    // We listen for both 'INSERT' (new messages) and 'UPDATE' (edited messages, reactions, pins).
     const channel = supabase
       .channel(`chat-${chatId}`)
       .on('postgres_changes', {
@@ -158,7 +160,7 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel);
     }
-  }, [chatId, supabase, loggedInUser?.id]);
+  }, [chatId, supabase]);
 
 
   if (isLoading || !isAppReady || !chat) {
