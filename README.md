@@ -172,4 +172,3 @@ Distributed under the MIT License. See `LICENSE` for more information.
 - [Supabase](https://supabase.com/) for their incredible backend-as-a-service platform.
 - [Vercel](https://vercel.com/) for making deployment seamless.
 - All the devotees and well-wishers who inspire this project.
-```

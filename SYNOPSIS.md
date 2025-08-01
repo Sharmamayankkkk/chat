@@ -143,7 +143,7 @@ sequenceDiagram
 ---
 
 ### **8. Database Schema**
-*(The database schema is defined in the `supabase/schema.sql` file in the project repository.)*
+*(The database schema is defined in the `supabase/schema.sql` file in the project repository. It is critical to run this file in the Supabase SQL Editor during initial setup.)*
 
 ---
 
