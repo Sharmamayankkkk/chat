@@ -8,4 +8,6 @@ export const ai = genkit({
         googleAI(),
         nextPlugin(),
     ],
+    logLevel: "debug",
+    enableTracingAndMetrics: true,
 });

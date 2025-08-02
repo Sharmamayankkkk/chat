@@ -41,7 +41,7 @@ import { LinkPreview } from './link-preview';
 import { ImageViewerDialog } from './image-viewer';
 import { MessageInfoDialog } from './message-info-dialog';
 import { ChatInput } from './chat-input';
-import { translateMessage } from '@/ai/flows/translate-message-flow';
+import { TranslateDialog } from './translate-dialog';
 
 
 interface ChatProps {
@@ -143,6 +143,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const [editingMessage, setEditingMessage] = useState<{ id: number; content: string } | null>(null);
     const [replyingTo, setReplyingTo] = useState<Message | null>(null);
     const [isRequestDmOpen, setIsRequestDmOpen] = useState(false);
+    const [messageToTranslate, setMessageToTranslate] = useState<Message | null>(null);
     
     // `useRef` is a React hook that lets us hold a reference to a DOM element,
     // like a div, so we can interact with it directly (e.g., to scroll it).
@@ -611,8 +612,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
     // This function determines how to display a message based on its content,
     // especially whether it's a text message or an attachment (image, file, event).
-    const renderMessageContent = (message: Message, translatedText?: string) => {
-        const mainContent = translatedText || message.content;
+    const renderMessageContent = (message: Message) => {
+        const mainContent = message.content;
         
         if (message.attachment_url) {
             const { type = '', name = 'attachment', size = 0 } = message.attachment_metadata || {};
@@ -857,34 +858,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
   
   // This is the component for a single message bubble.
   const MessageBubble = ({ message }: { message: Message }) => {
-    const [isTranslating, setIsTranslating] = useState(false);
-    const [translatedText, setTranslatedText] = useState<string | null>(null);
-
-    const handleTranslate = async () => {
-        if (!message.content || isTranslating) return;
-
-        setIsTranslating(true);
-        try {
-            // For now, we hardcode the target language. This could come from user settings later.
-            const targetLanguage = 'English'; 
-            const result = await translateMessage({
-                textToTranslate: message.content,
-                targetLanguage: targetLanguage,
-            });
-            setTranslatedText(result.translatedText);
-        } catch (error) {
-            console.error("Translation failed:", error);
-            toast({
-                variant: 'destructive',
-                title: 'Translation Failed',
-                description: 'Could not translate the message at this time.',
-            });
-        } finally {
-            setIsTranslating(false);
-        }
-    };
-
-
     // Handle system messages (e.g., "User pinned a message").
     if (message.content && message.content.startsWith(SYSTEM_MESSAGE_PREFIX)) {
         return <SystemMessage content={message.content} />;
@@ -990,13 +963,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                           </div>
                       )}
                       {message.replied_to_message && <ReplyPreview repliedTo={message.replied_to_message} />}
-                      {renderMessageContent(message, translatedText || undefined)}
-
-                       {translatedText && (
-                            <div className="mt-2 pt-2 border-t border-current/20">
-                                <p className="text-xs italic text-current/80">Translated from original</p>
-                            </div>
-                        )}
+                      {renderMessageContent(message)}
                       
                       <div className="text-xs mt-1 flex items-center gap-1.5 opacity-70" style={{ justifyContent: isMyMessage ? 'flex-end' : 'flex-start' }}>
                           {message.is_pinned && <Pin className="h-3 w-3 text-current mr-1" />}
@@ -1028,8 +995,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                                 <span>Reply</span>
                               </DropdownMenuItem>
                               {message.content && !isMyMessage && (
-                                <DropdownMenuItem onClick={handleTranslate} disabled={isTranslating}>
-                                    {isTranslating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Languages className="mr-2 h-4 w-4" />}
+                                <DropdownMenuItem onClick={() => setMessageToTranslate(message)}>
+                                    <Languages className="mr-2 h-4 w-4" />
                                     <span>Translate</span>
                                 </DropdownMenuItem>
                               )}
@@ -1119,6 +1086,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
   return (
     <div className="flex h-dvh flex-col">
         {/* These are Dialog components. They are modals that pop up over the screen. */}
+        <TranslateDialog open={!!messageToTranslate} onOpenChange={() => setMessageToTranslate(null)} message={messageToTranslate} />
         <ImageViewerDialog open={isImageViewerOpen} onOpenChange={setIsImageViewerOpen} src={imageViewerSrc} />
         {chatPartner && <RequestDmDialog open={isRequestDmOpen} onOpenChange={setIsRequestDmOpen} targetUser={chatPartner} />}
         {messageToForward && <ForwardMessageDialog open={!!messageToForward} onOpenChange={(open) => !open && setMessageToForward(null)} message={messageToForward} />}

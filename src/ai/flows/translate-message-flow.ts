@@ -30,10 +30,12 @@ const prompt = ai.definePrompt({
   name: 'translateMessagePrompt',
   input: { schema: TranslateMessageInputSchema },
   output: { schema: TranslateMessageOutputSchema },
-  prompt: `You are an expert multilingual translator. Translate the following text into {{targetLanguage}}.
-Provide only the translated text as your response, with no extra commentary or explanations.
+  prompt: `You are an expert multilingual translator. Your task is to translate the given text into the specified target language.
+Provide only the translated text as your response. Do not include any extra commentary, explanations, or labels like "Translation:".
 
-Text to translate:
+Target Language: {{targetLanguage}}
+
+Text to Translate:
 {{{textToTranslate}}}`,
 });
 
