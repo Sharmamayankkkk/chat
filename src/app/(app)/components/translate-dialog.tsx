@@ -23,6 +23,7 @@ import { Loader2, Languages } from 'lucide-react';
 import type { Message } from '@/lib/types';
 import { translateMessage } from '@/ai/flows/translate-message-flow';
 import { useToast } from '@/hooks/use-toast';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface TranslateDialogProps {
   message: Message | null;
@@ -102,9 +103,11 @@ export function TranslateDialog({ message, open, onOpenChange }: TranslateDialog
                          <SelectValue placeholder="Select a language" />
                      </SelectTrigger>
                      <SelectContent>
-                        {commonLanguages.map(lang => (
-                            <SelectItem key={lang} value={lang}>{lang}</SelectItem>
-                        ))}
+                       <ScrollArea className="h-48">
+                          {commonLanguages.map(lang => (
+                              <SelectItem key={lang} value={lang}>{lang}</SelectItem>
+                          ))}
+                        </ScrollArea>
                      </SelectContent>
                  </Select>
             </div>
@@ -112,7 +115,7 @@ export function TranslateDialog({ message, open, onOpenChange }: TranslateDialog
             {translatedText && !isTranslating && (
                  <div className="space-y-2">
                     <Label>Translated Text</Label>
-                    <p className="text-sm p-3 rounded-md bg-primary/10 border border-primary/20 text-primary-foreground max-h-28 overflow-y-auto">
+                    <p className="text-sm p-3 rounded-md bg-primary/10 border border-primary/20 text-primary max-h-28 overflow-y-auto">
                         {translatedText}
                     </p>
                 </div>
