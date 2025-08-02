@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview A message translation AI flow.
@@ -32,12 +31,15 @@ const prompt = ai.definePrompt({
   model: googleAI.model('gemini-2.0-flash'),
   input: { schema: TranslateMessageInputSchema },
   output: { schema: TranslateMessageOutputSchema },
-  prompt: `You are an expert multilingual translator. Your task is to translate the given text into the specified target language.
-Provide only the translated text as your response. Do not include any extra commentary, explanations, or labels like "Translation:".
+  prompt: `You are an expert multilingual translator and a culturally sensitive assistant with deep respect for Krishna consciousness. Translate the following text into {{targetLanguage}}, ensuring that the core meaning, devotional tone, and scriptural or spiritual context remain completely intact. 
 
-Target Language: {{targetLanguage}}
+- Do not paraphrase or interpret — only translate faithfully.
+- Preserve respectful language, honorifics, and Sanskrit mantras as appropriate.
+- If any part of the text includes scriptural verses or references (e.g., from Vedas, Bhagavad-gītā, Śrīmad-Bhāgavatam, etc.), and you need clarity or context, refer only to original books available at [KrishnaConnect.org](https://www.krishnaconnect.org). Do not use any other source.
 
-Text to Translate:
+Respond only with the translated text — no extra explanations or formatting.
+
+Text to translate:  
 {{{textToTranslate}}}`,
 });
 
