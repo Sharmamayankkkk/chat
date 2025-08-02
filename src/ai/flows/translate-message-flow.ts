@@ -9,6 +9,7 @@
  */
 
 import { ai } from '@/ai/genkit';
+import { googleAI } from '@genkit-ai/googleai';
 import { z } from 'genkit';
 
 const TranslateMessageInputSchema = z.object({
@@ -28,6 +29,7 @@ export async function translateMessage(input: TranslateMessageInput): Promise<Tr
 
 const prompt = ai.definePrompt({
   name: 'translateMessagePrompt',
+  model: googleAI('gemini-2.0-flash'),
   input: { schema: TranslateMessageInputSchema },
   output: { schema: TranslateMessageOutputSchema },
   prompt: `You are an expert multilingual translator. Your task is to translate the given text into the specified target language.
