@@ -203,7 +203,7 @@ export default function SignupPage() {
         <p>
           By creating an account, you agree to our{' '}
           <Link href="/terms-and-conditions" className="underline hover:text-primary">
-            Terms & Conditions
+            Terms &amp; Conditions
           </Link>{' '}
           and{' '}
           <Link href="/privacy-policy" className="underline hover:text-primary">
