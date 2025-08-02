@@ -9,7 +9,7 @@ import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react'
 import Image from 'next/image';
 import Link from 'next/link';
 import { useSwipeable } from 'react-swipeable';
-import { MoreVertical, Phone, Video, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, Copy, Star, Share2, Shield, Loader2, Pause, Play, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock, CircleSlash, ArrowDown, AtSign, Info } from 'lucide-react';
+import { MoreVertical, Phone, Video, Check, CheckCheck, Pencil, Trash2, SmilePlus, X, FileIcon, Download, Copy, Star, Share2, Shield, Loader2, Pause, Play, Users, UserX, ShieldAlert, Pin, PinOff, Reply, Clock, CircleSlash, ArrowDown, AtSign, Info, Languages } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,6 +41,8 @@ import { LinkPreview } from './link-preview';
 import { ImageViewerDialog } from './image-viewer';
 import { MessageInfoDialog } from './message-info-dialog';
 import { ChatInput } from './chat-input';
+import { translateMessage } from '@/ai/flows/translate-message-flow';
+
 
 interface ChatProps {
   chat: Chat;
@@ -609,7 +611,9 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
     // This function determines how to display a message based on its content,
     // especially whether it's a text message or an attachment (image, file, event).
-    const renderMessageContent = (message: Message) => {
+    const renderMessageContent = (message: Message, translatedText?: string) => {
+        const mainContent = translatedText || message.content;
+        
         if (message.attachment_url) {
             const { type = '', name = 'attachment', size = 0 } = message.attachment_metadata || {};
 
@@ -710,16 +714,16 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 );
             };
             
-            const showCaption = message.content && !type.startsWith('audio/') && !isSticker;
+            const showCaption = mainContent && !type.startsWith('audio/') && !isSticker;
 
             return (
                 <div className="space-y-2 break-words min-w-0">
                     {attachmentElement()}
-                    {showCaption && <p className="whitespace-pre-wrap break-words">{parseContent(message.content)}</p>}
+                    {showCaption && <p className="whitespace-pre-wrap break-words">{parseContent(mainContent)}</p>}
                 </div>
             );
         }
-        return <p className="whitespace-pre-wrap break-words">{parseContent(message.content)}</p>;
+        return <p className="whitespace-pre-wrap break-words">{parseContent(mainContent)}</p>;
     }
     
     // Prepares custom emojis for the reaction picker.
@@ -853,6 +857,34 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
   
   // This is the component for a single message bubble.
   const MessageBubble = ({ message }: { message: Message }) => {
+    const [isTranslating, setIsTranslating] = useState(false);
+    const [translatedText, setTranslatedText] = useState<string | null>(null);
+
+    const handleTranslate = async () => {
+        if (!message.content || isTranslating) return;
+
+        setIsTranslating(true);
+        try {
+            // For now, we hardcode the target language. This could come from user settings later.
+            const targetLanguage = 'English'; 
+            const result = await translateMessage({
+                textToTranslate: message.content,
+                targetLanguage: targetLanguage,
+            });
+            setTranslatedText(result.translatedText);
+        } catch (error) {
+            console.error("Translation failed:", error);
+            toast({
+                variant: 'destructive',
+                title: 'Translation Failed',
+                description: 'Could not translate the message at this time.',
+            });
+        } finally {
+            setIsTranslating(false);
+        }
+    };
+
+
     // Handle system messages (e.g., "User pinned a message").
     if (message.content && message.content.startsWith(SYSTEM_MESSAGE_PREFIX)) {
         return <SystemMessage content={message.content} />;
@@ -958,7 +990,14 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                           </div>
                       )}
                       {message.replied_to_message && <ReplyPreview repliedTo={message.replied_to_message} />}
-                      {renderMessageContent(message)}
+                      {renderMessageContent(message, translatedText || undefined)}
+
+                       {translatedText && (
+                            <div className="mt-2 pt-2 border-t border-current/20">
+                                <p className="text-xs italic text-current/80">Translated from original</p>
+                            </div>
+                        )}
+                      
                       <div className="text-xs mt-1 flex items-center gap-1.5 opacity-70" style={{ justifyContent: isMyMessage ? 'flex-end' : 'flex-start' }}>
                           {message.is_pinned && <Pin className="h-3 w-3 text-current mr-1" />}
                           {message.is_edited && <span className="text-xs italic">Edited</span>}
@@ -988,6 +1027,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                                 <Reply className="mr-2 h-4 w-4" />
                                 <span>Reply</span>
                               </DropdownMenuItem>
+                              {message.content && !isMyMessage && (
+                                <DropdownMenuItem onClick={handleTranslate} disabled={isTranslating}>
+                                    {isTranslating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Languages className="mr-2 h-4 w-4" />}
+                                    <span>Translate</span>
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem onClick={() => setMessageToForward(message)} disabled={isOptimistic}>
                                   <Share2 className="mr-2 h-4 w-4" />
                                   <span>Forward</span>

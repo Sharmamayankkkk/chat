@@ -1,6 +1,8 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { createBrowserClient } from '@supabase/ssr'
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/googleai';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -9,12 +11,7 @@ export function cn(...inputs: ClassValue[]) {
 export const createClient = () =>
   createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      auth: {
-        persistSession: false
-      }
-    }
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
 export function getContrastingTextColor(color: string): string {
