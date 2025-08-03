@@ -840,7 +840,7 @@ export function ChatInput({
               <TextareaAutosize
                 ref={textareaRef}
                 placeholder={isGroup ? "Type @ to mention users..." : "Type a message..."}
-                className={cn("pr-28 min-h-[40px] max-h-40 resize-none w-full border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 rounded-md", (replyingTo || editingMessage) && "rounded-t-none")}
+                className={cn("pr-36 min-h-[40px] max-h-40 resize-none w-full border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 rounded-md", (replyingTo || editingMessage) && "rounded-t-none")}
                 minRows={1}
                 maxRows={5}
                 value={currentMessageValue}
