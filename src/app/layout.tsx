@@ -34,6 +34,10 @@ export const metadata: Metadata = {
   formatDetection: {
     telephone: false,
   },
+  icons: {
+    icon: '/logo/light_KCS.png',
+    apple: '/logo/light_KCS.png',
+  },
   openGraph: {
     type: "website",
     siteName: APP_NAME,

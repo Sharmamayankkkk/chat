@@ -35,6 +35,7 @@ Krishna Connect is packed with features designed to create a vibrant and engagin
 - **Online Status**: Know who is currently online.
 
 ### Rich & Expressive Messaging
+- **AI-Powered Translation**: Translate any message into dozens of languages with a single click, powered by the Gemini API.
 - **Rich Media Sharing**: Effortlessly share photos, important documents, and audio files with previews and direct download links.
 - **Voice Notes**: Record and send heartfelt voice messages directly within the chat.
 - **Text Formatting**: Emphasize your messages with **bold**, _italics_, `code`, ~~strikethrough~~, and `||spoiler||` tags.

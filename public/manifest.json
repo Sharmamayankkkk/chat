@@ -1,22 +1,21 @@
-
 {
   "name": "Krishna Connect",
-  "short_name": "KCS Connect",
-  "description": "Where Devotees Unite. A modern, real-time chat application for the conscious community.",
+  "short_name": "KConnect",
+  "description": "A modern, real-time chat application for the conscious community, now powered by AI.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
   "icons": [
     {
-      "src": "/logo/light_KCS_192.png",
+      "src": "/logo/light_KCS.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/logo/light_KCS_512.png",
+      "src": "/logo/dark_KCS.png",
       "sizes": "512x512",
       "type": "image/png"
     }
-  ],
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#4f46e5"
+  ]
 }
