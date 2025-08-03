@@ -17,6 +17,7 @@ const APP_NAME = "Krishna Connect";
 const APP_DEFAULT_TITLE = "Krishna Connect";
 const APP_TITLE_TEMPLATE = "%s | Krishna Connect";
 const APP_DESCRIPTION = "A modern, real-time chat application for the conscious community, now powered by AI.";
+const APP_URL = "https://krishnaconnect.com";
 
 export const metadata: Metadata = {
   applicationName: APP_NAME,
@@ -40,12 +41,21 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: "website",
+    url: APP_URL,
     siteName: APP_NAME,
     title: {
       default: APP_DEFAULT_TITLE,
       template: APP_TITLE_TEMPLATE,
     },
     description: APP_DESCRIPTION,
+    images: [
+      {
+        url: `${APP_URL}/logo/light_KCS.png`,
+        width: 512,
+        height: 512,
+        alt: 'Krishna Connect Logo'
+      }
+    ]
   },
   twitter: {
     card: "summary",
@@ -54,6 +64,9 @@ export const metadata: Metadata = {
       template: APP_TITLE_TEMPLATE,
     },
     description: APP_DESCRIPTION,
+    images: [
+       `${APP_URL}/logo/light_KCS.png`,
+    ]
   },
 };
 
