@@ -38,7 +38,7 @@ The scope of the project defines its boundaries, outlining what is included and 
 - **Customization:** Light/dark modes and customizable chat appearance (bubble colors, wallpapers).
 - **Community Management:** Admin panel for user management, DM request moderation, and group administration.
 - **Event System:** Creation, RSVP, and sharing of community events.
-- **AI Features:** Integration of Genkit for potential future AI-powered enhancements.
+- **AI Features:** Integration of Genkit for AI-powered translation.
 
 #### **Out-of-Scope (for the current version):**
 - **Live Video/Audio Calls:** While planned for the future, real-time video/audio calling is not part of the initial scope.
