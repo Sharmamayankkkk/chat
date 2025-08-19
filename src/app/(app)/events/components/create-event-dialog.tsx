@@ -137,8 +137,6 @@ export function CreateEventDialog({ open, onOpenChange, eventToEdit, onEventCrea
           thumbnail: thumbnailUrl,
           meet_link: values.meet_link,
           date_time: combinedDateTime.toISOString(),
-          status: 'active', // Set initial status
-          is_deleted: false
         });
         if (error) throw error;
         toast({ title: "Event Created!", description: `The event "${values.title}" has been scheduled.` });

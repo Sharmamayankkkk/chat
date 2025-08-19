@@ -1,35 +1,30 @@
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(self.skipWaiting());
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+self.addEventListener('push', (event) => {
+  const data = event.data.json();
+  self.registration.showNotification(data.title, {
+    body: data.body,
+    icon: data.icon,
+  });
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   
-  const chatId = event.notification.data?.chatId;
-  if (chatId) {
-    const urlToOpen = new URL(`/chat/${chatId}`, self.location.origin).href;
+  const chatId = event.notification.data.chatId;
 
-    event.waitUntil(
-      clients.matchAll({
-        type: 'window',
-        includeUncontrolled: true
-      }).then((clientList) => {
-        if (clientList.length > 0) {
-          let client = clientList[0];
-          for (let i = 0; i < clientList.length; i++) {
-            if (clientList[i].focused) {
-              client = clientList[i];
-            }
-          }
-          return client.focus().then(c => c.navigate(urlToOpen));
+  event.waitUntil(
+    clients.matchAll({ type: 'window' }).then((clientList) => {
+      const urlToOpen = new URL(`/chat/${chatId}`, self.location.origin).href;
+
+      for (const client of clientList) {
+        if (client.url === urlToOpen && 'focus' in client) {
+          return client.focus();
         }
+      }
+      
+      if (clients.openWindow) {
         return clients.openWindow(urlToOpen);
-      })
-    );
-  }
+      }
+    })
+  );
 });
