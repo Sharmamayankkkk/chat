@@ -117,6 +117,11 @@ export function CallProvider({ children, userId }: CallProviderProps) {
   // Get user media
   const getUserMedia = useCallback(async (type: CallType) => {
     try {
+      // Check if mediaDevices is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Media devices not supported by your browser');
+      }
+
       const constraints = {
         audio: true,
         video: type === 'video'
@@ -127,10 +132,24 @@ export function CallProvider({ children, userId }: CallProviderProps) {
       return stream;
     } catch (error) {
       console.error('Error accessing media devices:', error);
+      
+      let errorMessage = 'Please allow access to camera and microphone';
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          errorMessage = 'Camera and microphone access was denied. Please check your browser permissions.';
+        } else if (error.name === 'NotFoundError') {
+          errorMessage = 'No camera or microphone found. Please check your devices.';
+        } else if (error.name === 'NotSupportedError') {
+          errorMessage = 'Your browser does not support media access.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       toast({ 
         variant: 'destructive', 
-        title: 'Media access denied', 
-        description: 'Please allow access to camera and microphone' 
+        title: 'Media access error', 
+        description: errorMessage
       });
       throw error;
     }
@@ -138,6 +157,15 @@ export function CallProvider({ children, userId }: CallProviderProps) {
 
   // Initiate a call
   const initiateCall = useCallback(async (chatId: number, participantId: string, type: CallType) => {
+    if (!userId) {
+      toast({ 
+        variant: 'destructive', 
+        title: 'Cannot start call', 
+        description: 'User not authenticated' 
+      });
+      return;
+    }
+
     try {
       const stream = await getUserMedia(type);
       
@@ -146,7 +174,7 @@ export function CallProvider({ children, userId }: CallProviderProps) {
         chatId,
         type,
         status: 'calling',
-        initiatorId: userId!,
+        initiatorId: userId,
         participantId,
         createdAt: new Date().toISOString(),
       };
@@ -185,9 +213,14 @@ export function CallProvider({ children, userId }: CallProviderProps) {
 
     } catch (error) {
       console.error('Error initiating call:', error);
+      toast({ 
+        variant: 'destructive', 
+        title: 'Call failed', 
+        description: error instanceof Error ? error.message : 'Unable to start the call. Please try again.' 
+      });
       endCall();
     }
-  }, [userId, getUserMedia, createPeer, supabase]);
+  }, [userId, getUserMedia, createPeer, supabase, toast]);
 
   // Accept incoming call
   const acceptCall = useCallback(async () => {

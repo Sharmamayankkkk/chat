@@ -21,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import type { Chat, User, Message, AttachmentMetadata } from '@/lib/types';
+import type { Chat, User, Message, AttachmentMetadata, CallType } from '@/lib/types';
 import { cn, getContrastingTextColor, createClient } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
@@ -141,6 +141,22 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
 
     // Call functionality hook
     const { initiateCall } = useCall();
+
+    // Test call functionality
+    const handleCallClick = useCallback((type: CallType) => {
+        if (!chatPartner) {
+            toast({ variant: 'destructive', title: 'Error', description: 'No chat partner found' });
+            return;
+        }
+        
+        if (!initiateCall) {
+            toast({ variant: 'destructive', title: 'Error', description: 'Call functionality not available' });
+            return;
+        }
+
+        console.log(`Initiating ${type} call`, { chatId: chat.id, partnerId: chatPartner.id });
+        initiateCall(chat.id, chatPartner.id, type);
+    }, [initiateCall, chat.id, chatPartner, toast]);
 
     // These are "state" variables. They hold data that can change and cause the component to re-render.
     // `useState` is a fundamental React hook for managing component state.
@@ -1152,7 +1168,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                                 <Button 
                                     variant="ghost" 
                                     size="icon" 
-                                    onClick={() => initiateCall(chat.id, chatPartner.id, 'audio')}
+                                    onClick={() => handleCallClick('audio')}
                                 >
                                     <Phone className="h-5 w-5"/>
                                 </Button>
@@ -1167,7 +1183,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                                 <Button 
                                     variant="ghost" 
                                     size="icon" 
-                                    onClick={() => initiateCall(chat.id, chatPartner.id, 'video')}
+                                    onClick={() => handleCallClick('video')}
                                 >
                                     <Video className="h-5 w-5"/>
                                 </Button>

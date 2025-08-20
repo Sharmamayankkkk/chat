@@ -39,12 +39,12 @@ export function CallDialog() {
     setCallDialogOpen,
   } = useCall();
 
-  const { allUsers } = useAppContext();
+  const { allUsers, loggedInUser } = useAppContext();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
-  // Get participant info
-  const otherParticipantId = currentCall?.initiatorId === currentCall?.participantId 
+  // Get participant info - find the other participant (not the current user)
+  const otherParticipantId = currentCall?.initiatorId === loggedInUser?.id 
     ? currentCall?.participantId 
     : currentCall?.initiatorId;
   const otherParticipant = allUsers.find(user => user.id === otherParticipantId);
