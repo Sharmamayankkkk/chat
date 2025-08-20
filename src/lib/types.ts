@@ -148,6 +148,32 @@ export type Event = {
   is_deleted: boolean;
 };
 
+// Call-related types
+export type CallType = 'audio' | 'video';
+
+export type CallStatus = 'idle' | 'calling' | 'ringing' | 'connected' | 'ended' | 'declined' | 'missed';
+
+export type CallParticipant = {
+  userId: string;
+  stream?: MediaStream;
+  isMuted: boolean;
+  isVideoEnabled: boolean;
+  isScreenSharing: boolean;
+};
+
+export type Call = {
+  id: string;
+  chatId: number;
+  type: CallType;
+  status: CallStatus;
+  initiatorId: string;
+  participantId: string;
+  createdAt: string;
+  startedAt?: string;
+  endedAt?: string;
+  signal?: any; // WebRTC signaling data
+};
+
 export interface AppContextType {
   loggedInUser: User | null
   allUsers: User[]
