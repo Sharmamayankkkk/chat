@@ -1143,8 +1143,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                 </TooltipProvider>
             )}
             
-            {/* Call buttons - only show for DMs */}
-            {!isGroup && chatPartner && (
+            {/* Call buttons - only show for DMs when not blocked and no pending DM request */}
+            {!isGroup && chatPartner && !isChatPartnerBlocked && !isDmRestricted && (
                 <>
                     <TooltipProvider>
                         <Tooltip>
