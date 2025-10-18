@@ -194,10 +194,11 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
   useEffect(() => {
     if (isPaused) {
       stopTimer();
+      elapsedTimeRef.current = (progress / 100) * STATUS_DURATION;
     } else if (open) {
       startTimer();
     }
-  }, [isPaused, open, startTimer, stopTimer]);
+  }, [isPaused, open, startTimer, stopTimer, progress]);
 
 
   if (!statusUpdate) return null;
@@ -206,7 +207,7 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] max-h-[95vh] sm:max-w-md w-full h-full sm:h-auto sm:aspect-[9/16] bg-black border-none p-0 overflow-hidden flex flex-col">
+      <DialogContent className="max-w-[95vw] max-h-[95vh] sm:max-w-md w-full h-full sm:h-auto sm:aspect-[9/16] bg-black border-none p-0 overflow-hidden flex flex-col data-[state=open]:!animate-none data-[state=closed]:!animate-none">
         <DialogTitle className="sr-only">Status from {statusUpdate.name}</DialogTitle>
         <DialogDescription className="sr-only">Viewing status update. Press escape to close.</DialogDescription>
         
@@ -231,9 +232,14 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
                         <p className="text-xs text-white/80">{formatDistanceToNow(new Date(currentStatus.created_at), { addSuffix: true })}</p>
                     </div>
                 </div>
-                 <button onClick={handlePausePlay} className="text-white p-2">
-                    {isPaused ? <Play /> : <Pause />}
-                </button>
+                <div className="flex items-center">
+                     <button onClick={handlePausePlay} className="text-white p-2">
+                        {isPaused ? <Play /> : <Pause />}
+                    </button>
+                    <button onClick={() => onOpenChange(false)} className="text-white p-2">
+                        <X />
+                    </button>
+                </div>
             </div>
         </div>
 
