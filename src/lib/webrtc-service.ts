@@ -59,8 +59,8 @@ export class WebRTCService {
     try {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: {
-          cursor: 'always',
-        },
+          cursor: 'always' as any,
+        } as MediaTrackConstraints,
         audio: false,
       });
       return screenStream;
