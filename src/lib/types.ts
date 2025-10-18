@@ -148,6 +148,42 @@ export type Event = {
   is_deleted: boolean;
 };
 
+// Call-related types
+export type CallStatus = 'ringing' | 'active' | 'ended' | 'missed' | 'rejected';
+export type CallType = 'audio' | 'video';
+
+export type CallSession = {
+  id: number;
+  created_at: string;
+  chat_id: number;
+  initiated_by: string;
+  call_type: CallType;
+  status: CallStatus;
+  started_at?: string;
+  ended_at?: string;
+  participants?: CallParticipant[];
+  initiator?: User;
+};
+
+export type CallParticipant = {
+  call_id: number;
+  user_id: string;
+  joined_at: string;
+  left_at?: string;
+  is_muted: boolean;
+  is_video_off: boolean;
+  is_screen_sharing: boolean;
+  profiles?: User;
+};
+
+export type PeerConnection = {
+  userId: string;
+  peer: any; // SimplePeer.Instance
+  stream?: MediaStream;
+};
+
+export type CallLayout = 'grid' | 'spotlight' | 'sidebar';
+
 export interface AppContextType {
   loggedInUser: User | null
   allUsers: User[]

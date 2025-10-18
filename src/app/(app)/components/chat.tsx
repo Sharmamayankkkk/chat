@@ -42,6 +42,9 @@ import { ImageViewerDialog } from './image-viewer';
 import { MessageInfoDialog } from './message-info-dialog';
 import { ChatInput } from './chat-input';
 import { TranslateDialog } from './translate-dialog';
+import { VideoCallInterface } from './video-call-interface';
+import { IncomingCallNotification } from './incoming-call-notification';
+import type { CallSession, CallParticipant } from '@/lib/types';
 
 
 interface ChatProps {
@@ -168,6 +171,12 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     const [messageInfo, setMessageInfo] = useState<Message | null>(null);
     
     const hasScrolledOnLoad = useRef(false);
+    
+    // Call-related state
+    const [activeCall, setActiveCall] = useState<CallSession | null>(null);
+    const [incomingCall, setIncomingCall] = useState<CallSession | null>(null);
+    const [callParticipants, setCallParticipants] = useState<CallParticipant[]>([]);
+    const supabase = createClient();
 
     // The `useEffect` hook runs code after the component has rendered.
     // This one sets up a scroll listener to show or hide the "scroll to bottom" button.
@@ -217,9 +226,149 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             })
             .catch(err => console.error("Failed to load assets:", err));
     }, []);
+    
+    // Subscribe to incoming calls
+    useEffect(() => {
+        if (!chat.id || !loggedInUser.id) return;
 
-    // We create a Supabase client instance to interact with our database.
-    const supabase = createClient();
+        const channel = supabase
+            .channel(`call-notifications-${chat.id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'call_sessions',
+                    filter: `chat_id=eq.${chat.id}`,
+                },
+                async (payload) => {
+                    const session = payload.new as CallSession;
+                    
+                    // Don't show notification if we initiated the call
+                    if (session.initiated_by === loggedInUser.id) return;
+                    
+                    // Fetch caller info
+                    const { data: caller } = await supabase
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', session.initiated_by)
+                        .single();
+                    
+                    if (caller) {
+                        setIncomingCall({ ...session, initiator: caller });
+                    }
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'call_sessions',
+                    filter: `chat_id=eq.${chat.id}`,
+                },
+                (payload) => {
+                    const session = payload.new as CallSession;
+                    
+                    // Clear incoming call if it's ended or rejected
+                    if (session.status === 'ended' || session.status === 'rejected') {
+                        setIncomingCall(null);
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [chat.id, loggedInUser.id, supabase]);
+
+    // Handle call initiation
+    const handleStartCall = useCallback(async (callType: 'audio' | 'video') => {
+        try {
+            // Check if group call - only admins can start
+            if (isGroup && !isGroupAdmin) {
+                toast({
+                    title: "Permission Denied",
+                    description: "Only group admins can start calls",
+                    variant: "destructive",
+                });
+                return;
+            }
+
+            const { data: session, error } = await supabase
+                .from('call_sessions')
+                .insert({
+                    chat_id: chat.id,
+                    initiated_by: loggedInUser.id,
+                    call_type: callType,
+                    status: 'ringing',
+                })
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            // Fetch participants
+            const { data: participants } = await supabase
+                .from('call_participants')
+                .select('*, profiles(*)')
+                .eq('call_id', session.id);
+
+            setActiveCall(session);
+            setCallParticipants(participants || []);
+        } catch (error) {
+            console.error('Error starting call:', error);
+            toast({
+                title: "Error",
+                description: "Failed to start call",
+                variant: "destructive",
+            });
+        }
+    }, [chat.id, loggedInUser.id, isGroup, isGroupAdmin, supabase, toast]);
+
+    // Handle accepting incoming call
+    const handleAcceptCall = useCallback(async () => {
+        if (!incomingCall) return;
+
+        // Fetch participants
+        const { data: participants } = await supabase
+            .from('call_participants')
+            .select('*, profiles(*)')
+            .eq('call_id', incomingCall.id);
+
+        setActiveCall(incomingCall);
+        setCallParticipants(participants || []);
+        setIncomingCall(null);
+    }, [incomingCall, supabase]);
+
+    // Handle rejecting incoming call
+    const handleRejectCall = useCallback(async () => {
+        if (!incomingCall) return;
+
+        await supabase
+            .from('call_sessions')
+            .update({ status: 'rejected' })
+            .eq('id', incomingCall.id);
+
+        setIncomingCall(null);
+    }, [incomingCall, supabase]);
+
+    // Handle ending active call
+    const handleEndCall = useCallback(async () => {
+        if (!activeCall) return;
+
+        await supabase
+            .from('call_sessions')
+            .update({ status: 'ended', ended_at: new Date().toISOString() })
+            .eq('id', activeCall.id);
+
+        setActiveCall(null);
+        setCallParticipants([]);
+    }, [activeCall, supabase]);
+            })
+            .catch(err => console.error("Failed to load assets:", err));
+    }, []);
 
     // `useMemo` is a performance optimization hook. It calculates a value and "memoizes" (remembers) it.
     // The value is only recalculated if one of the dependencies (the array at the end) changes.
@@ -1138,8 +1287,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     </Tooltip>
                 </TooltipProvider>
             )}
-            <Button variant="ghost" size="icon" onClick={() => toast({ title: "Coming Soon", description: "Voice calls will be available soon." })}><Phone className="h-5 w-5"/></Button>
-            <Button variant="ghost" size="icon" onClick={() => toast({ title: "Coming Soon", description: "Video calls will be available soon." })}><Video className="h-5 w-5"/></Button>
+            <Button variant="ghost" size="icon" onClick={() => handleStartCall('audio')}><Phone className="h-5 w-5"/></Button>
+            <Button variant="ghost" size="icon" onClick={() => handleStartCall('video')}><Video className="h-5 w-5"/></Button>
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon">
@@ -1245,6 +1394,31 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
             onUnblockUser={() => chatPartner && unblockUser(chatPartner.id)}
             onRequestDm={() => setIsRequestDmOpen(true)}
         />
+        
+        {/* Incoming call notification */}
+        {incomingCall && incomingCall.initiator && (
+            <IncomingCallNotification
+                callSession={incomingCall}
+                caller={incomingCall.initiator}
+                callType={incomingCall.call_type}
+                onAccept={handleAcceptCall}
+                onReject={handleRejectCall}
+            />
+        )}
+        
+        {/* Active call interface */}
+        {activeCall && (
+            <VideoCallInterface
+                callId={activeCall.id}
+                chatId={chat.id}
+                callType={activeCall.call_type}
+                participants={callParticipants}
+                loggedInUser={loggedInUser}
+                isGroupCall={isGroup}
+                isAdmin={isGroupAdmin || false}
+                onEndCall={handleEndCall}
+            />
+        )}
     </div>
   );
 }
