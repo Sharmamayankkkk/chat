@@ -52,6 +52,7 @@ export function CreateGroupDialog({ open, onOpenChange }: CreateGroupDialogProps
   const { loggedInUser } = useAppContext();
   const [allUsers, setAllUsers] = React.useState<User[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [isCreating, setIsCreating] = React.useState(false);
   const supabase = createClient();
 
   const form = useForm<z.infer<typeof createGroupSchema>>({
@@ -85,17 +86,18 @@ export function CreateGroupDialog({ open, onOpenChange }: CreateGroupDialogProps
 
   const onSubmit = async (values: z.infer<typeof createGroupSchema>) => {
     if (!loggedInUser) return;
-    setIsLoading(true);
+    setIsCreating(true);
 
     try {
-        // 1. Create the chat. 'created_by' is set by the database default.
+        // 1. Create the chat.
         const { data: chatData, error: chatError } = await supabase
             .from('chats')
             .insert({
                 name: values.name,
                 description: values.description,
                 avatar_url: `https://placehold.co/100x100.png`,
-                type: 'group'
+                type: 'group',
+                created_by: loggedInUser.id,
             })
             .select()
             .single();
@@ -104,8 +106,8 @@ export function CreateGroupDialog({ open, onOpenChange }: CreateGroupDialogProps
         const newChatId = chatData.id;
 
         // 2. Add participants, including creator.
-        const memberIds = [...values.members, loggedInUser.id];
-        const participantData = memberIds.map(userId => {
+        const allMemberIds = [...new Set([...values.members, loggedInUser.id])];
+        const participantData = allMemberIds.map(userId => {
           const user = allUsers.find(u => u.id === userId);
           // Creator and Gurudev are admins by default
           const isAdmin = userId === loggedInUser.id || user?.role === 'gurudev';
@@ -132,7 +134,7 @@ export function CreateGroupDialog({ open, onOpenChange }: CreateGroupDialogProps
           description: `Database error: ${error.message}. Please ensure RLS policies are correct or disabled for testing.`
         });
     } finally {
-        setIsLoading(false);
+        setIsCreating(false);
     }
   }
 
@@ -237,7 +239,7 @@ export function CreateGroupDialog({ open, onOpenChange }: CreateGroupDialogProps
               <DialogClose asChild>
                 <Button type="button" variant="outline">Cancel</Button>
               </DialogClose>
-              <Button type="submit" disabled={isLoading}>{isLoading ? 'Creating...' : 'Create Group'}</Button>
+              <Button type="submit" disabled={isCreating}>{isCreating ? 'Creating...' : 'Create Group'}</Button>
             </DialogFooter>
           </form>
         </Form>
