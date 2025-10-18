@@ -39,7 +39,7 @@ export default function StatusPage() {
         
         const { data, error } = await supabase
             .from('statuses')
-            .select('id, media_url, created_at, caption, profiles:user_id(*), status_views!left(viewer_id)')
+            .select('*, profiles:user_id(*), status_views!left(viewer_id)')
             .gt('expires_at', new Date().toISOString())
             .order('created_at', { ascending: false });
 
@@ -61,7 +61,7 @@ export default function StatusPage() {
                 };
             }
             const hasViewed = status.status_views.some((view: any) => view.viewer_id === loggedInUser.id);
-            if (!hasViewed) {
+            if (!hasViewed && userId !== loggedInUser.id) {
                 grouped[userId].is_all_viewed = false;
             }
             grouped[userId].statuses.push({
@@ -73,8 +73,12 @@ export default function StatusPage() {
         });
 
         const myStatusUpdate = grouped[loggedInUser.id] || null;
-        delete grouped[loggedInUser.id];
+        if (myStatusUpdate) {
+            // My own status is always considered "viewed" in the list context
+            myStatusUpdate.is_all_viewed = true;
+        }
 
+        delete grouped[loggedInUser.id];
         const allUpdates = Object.values(grouped);
 
         setMyStatus(myStatusUpdate);
@@ -127,17 +131,19 @@ export default function StatusPage() {
                     <h2 className="text-xl font-bold tracking-tight">Status</h2>
                 </header>
                 <main className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
-                    <div onClick={() => myStatus ? setViewingStatus(myStatus) : setIsCreateOpen(true)} className="flex items-center gap-4 cursor-pointer hover:bg-muted p-2 rounded-lg">
+                    <div className="flex items-center gap-4 p-2">
                         <div className="relative">
-                            <Avatar className="h-14 w-14">
-                                <AvatarImage src={myStatus?.statuses[0]?.media_url || loggedInUser.avatar_url} alt="My Status" className="object-cover" />
-                                <AvatarFallback>{loggedInUser.name.charAt(0)}</AvatarFallback>
-                            </Avatar>
-                            <div className="absolute -bottom-1 -right-1 h-6 w-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center border-2 border-background">
+                           <button onClick={() => myStatus && setViewingStatus(myStatus)} disabled={!myStatus} className="disabled:pointer-events-none">
+                                <Avatar className="h-14 w-14">
+                                    <AvatarImage src={myStatus?.statuses[0]?.media_url || loggedInUser.avatar_url} alt="My Status" className="object-cover" />
+                                    <AvatarFallback>{loggedInUser.name.charAt(0)}</AvatarFallback>
+                                </Avatar>
+                           </button>
+                            <button onClick={() => setIsCreateOpen(true)} className="absolute -bottom-1 -right-1 h-6 w-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center border-2 border-background cursor-pointer hover:scale-110 transition-transform">
                                 <Plus className="h-4 w-4" />
-                            </div>
+                            </button>
                         </div>
-                        <div>
+                        <div onClick={() => myStatus && setViewingStatus(myStatus)} className="cursor-pointer">
                             <p className="font-semibold">My Status</p>
                             <p className="text-sm text-muted-foreground">
                                 {myStatus ? `${myStatus.statuses.length} updates` : 'Tap to add a status update'}
