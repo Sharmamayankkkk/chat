@@ -3,7 +3,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { MessageSquare, Calendar, Compass } from 'lucide-react'
+import { MessageSquare, Calendar, Users, Compass } from 'lucide-react'
 import {
   SidebarMenu,
   SidebarMenuItem,
@@ -22,6 +22,12 @@ export function MainNav() {
       isActive: pathname.startsWith('/chat') || pathname === '/',
     },
     {
+      href: '/status',
+      label: 'Status',
+      icon: Compass,
+      isActive: pathname.startsWith('/status'),
+    },
+    {
       href: '/events',
       label: 'Events',
       icon: Calendar,
@@ -30,7 +36,7 @@ export function MainNav() {
     {
       href: '/explore',
       label: 'Explore KCS',
-      icon: Compass,
+      icon: Users,
       isActive: pathname.startsWith('/explore'),
     },
   ]
