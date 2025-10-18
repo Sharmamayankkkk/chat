@@ -29,6 +29,7 @@ Krishna Connect is packed with features designed to create a vibrant and engagin
 
 ### Real-Time Communication
 - **One-on-One & Group Chats**: Engage in instantaneous, meaningful conversations.
+- **Video & Audio Calls**: High-quality WebRTC-based calling with screen sharing, multiple layouts, and admin controls for group calls.
 - **Community Circles (Channels)**: Create and manage public or private groups for focused discussions, study circles, or event coordination.
 - **Admin Controls**: Group admins can control chat history visibility for new members and generate secure invite links.
 - **Typing Indicators**: See when others are typing in real-time.

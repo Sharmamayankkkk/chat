@@ -255,13 +255,13 @@ export const VideoCallInterface: React.FC<VideoCallInterfaceProps> = ({
       allParticipants.length === 1
         ? 'grid-cols-1'
         : allParticipants.length === 2
-        ? 'grid-cols-2'
+        ? 'grid-cols-1 sm:grid-cols-2'
         : allParticipants.length <= 4
-        ? 'grid-cols-2'
-        : 'grid-cols-3';
+        ? 'grid-cols-1 sm:grid-cols-2'
+        : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3';
 
     return (
-      <div className={cn('grid gap-2 h-full p-4', gridCols)}>
+      <div className={cn('grid gap-2 h-full p-2 sm:p-4', gridCols)}>
         {allParticipants.map((participant) => (
           <VideoTile key={participant.userId} {...participant} />
         ))}
@@ -279,8 +279,8 @@ export const VideoCallInterface: React.FC<VideoCallInterfaceProps> = ({
     const participant = participants.find((p) => p.user_id === userId);
 
     return (
-      <div className="flex h-full">
-        <div className="flex-1 p-4">
+      <div className="flex flex-col lg:flex-row h-full">
+        <div className="flex-1 p-2 sm:p-4">
           <VideoTile
             userId={userId}
             user={userId === loggedInUser.id ? loggedInUser : participant?.profiles}
@@ -295,9 +295,9 @@ export const VideoCallInterface: React.FC<VideoCallInterfaceProps> = ({
           />
         </div>
         
-        <div className="w-64 p-4">
+        <div className="w-full lg:w-64 p-2 sm:p-4 max-h-48 lg:max-h-full">
           <ScrollArea className="h-full">
-            <div className="space-y-2">
+            <div className="flex lg:flex-col gap-2 lg:space-y-2 lg:gap-0">
               {Array.from(remoteStreams.entries())
                 .slice(1)
                 .map(([userId, stream]) => {
@@ -388,16 +388,16 @@ export const VideoCallInterface: React.FC<VideoCallInterfaceProps> = ({
       </div>
 
       {/* Call controls */}
-      <div className="bg-gray-900/80 backdrop-blur-sm border-t border-gray-800 px-4 py-4">
-        <div className="flex items-center justify-center gap-3">
+      <div className="bg-gray-900/80 backdrop-blur-sm border-t border-gray-800 px-2 sm:px-4 py-3 sm:py-4">
+        <div className="flex items-center justify-center gap-2 sm:gap-3">
           {/* Mute button */}
           <Button
             variant={isMuted ? 'destructive' : 'secondary'}
             size="icon"
-            className="h-12 w-12 rounded-full"
+            className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
             onClick={handleToggleMute}
           >
-            {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+            {isMuted ? <MicOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Mic className="h-4 w-4 sm:h-5 sm:w-5" />}
           </Button>
 
           {/* Video button */}
@@ -405,10 +405,10 @@ export const VideoCallInterface: React.FC<VideoCallInterfaceProps> = ({
             <Button
               variant={isVideoOff ? 'destructive' : 'secondary'}
               size="icon"
-              className="h-12 w-12 rounded-full"
+              className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
               onClick={handleToggleVideo}
             >
-              {isVideoOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
+              {isVideoOff ? <VideoOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Video className="h-4 w-4 sm:h-5 sm:w-5" />}
             </Button>
           )}
 
@@ -417,10 +417,10 @@ export const VideoCallInterface: React.FC<VideoCallInterfaceProps> = ({
             <Button
               variant={isScreenSharing ? 'default' : 'secondary'}
               size="icon"
-              className="h-12 w-12 rounded-full"
+              className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
               onClick={handleToggleScreenShare}
             >
-              {isScreenSharing ? <MonitorOff className="h-5 w-5" /> : <Monitor className="h-5 w-5" />}
+              {isScreenSharing ? <MonitorOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Monitor className="h-4 w-4 sm:h-5 sm:w-5" />}
             </Button>
           )}
 
@@ -428,17 +428,17 @@ export const VideoCallInterface: React.FC<VideoCallInterfaceProps> = ({
           <Button
             variant="destructive"
             size="icon"
-            className="h-12 w-12 rounded-full"
+            className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
             onClick={handleEndCall}
           >
-            <PhoneOff className="h-5 w-5" />
+            <PhoneOff className="h-4 w-4 sm:h-5 sm:w-5" />
           </Button>
         </div>
       </div>
 
       {/* Participants panel (sidebar) */}
       {showParticipants && isGroupCall && (
-        <div className="absolute right-0 top-0 bottom-0 w-80 bg-gray-900 border-l border-gray-800 p-4">
+        <div className="absolute right-0 top-0 bottom-0 w-full sm:w-80 bg-gray-900 border-l border-gray-800 p-4 z-10">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-white font-semibold">Participants</h3>
             <Button variant="ghost" size="icon" onClick={() => setShowParticipants(false)}>
