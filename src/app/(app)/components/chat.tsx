@@ -283,6 +283,70 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         };
     }, [chat.id, loggedInUser.id, supabase]);
 
+    // `useMemo` is a performance optimization hook. It calculates a value and "memoizes" (remembers) it.
+    // The value is only recalculated if one of the dependencies (the array at the end) changes.
+    // This prevents expensive calculations on every single render.
+    const chatPartner = useMemo(() => {
+        if (chat.type !== 'dm' || !chat.participants) return null;
+        const partnerRecord = chat.participants.find(p => p.user_id !== loggedInUser.id);
+        return partnerRecord?.profiles ?? null;
+    }, [chat, loggedInUser.id]);
+    
+    const isGroup = chat.type === 'group' || chat.type === 'channel';
+
+    const isChannel = chat.type === 'channel';
+    const canPostInChannel = useMemo(() => 
+        isChannel && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin,
+    [chat, loggedInUser.id, isChannel]);
+    
+    const isChatPartnerBlocked = useMemo(() => {
+        if (!chatPartner || !blockedUsers) return false;
+        return blockedUsers.includes(chatPartner.id);
+    }, [blockedUsers, chatPartner]);
+    
+    const isGroupAdmin = useMemo(() => 
+        isGroup && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin, 
+    [chat, loggedInUser.id, isGroup]);
+    
+    const pinnedMessages = useMemo(() => (chat.messages || []).filter(m => m.is_pinned), [chat.messages]);
+
+    const isDmRestricted = useMemo(() => {
+        if (chat.type !== 'dm' || !chatPartner || !dmRequests || loggedInUser.is_admin || chatPartner.is_admin) {
+            return false;
+        }
+
+        if (!(loggedInUser.gender && chatPartner.gender && loggedInUser.gender !== chatPartner.gender)) {
+            return false;
+        }
+
+        const hasPermission = dmRequests.some(req =>
+            req.status === 'approved' &&
+            ((req.from_user_id === loggedInUser.id && req.to_user_id === chatPartner.id) ||
+             (req.from_user_id === chatPartner.id && req.to_user_id === loggedInUser.id))
+        );
+        
+        const isChatWithGurudev = chatPartner?.role === 'gurudev';
+        if (isChatWithGurudev && !loggedInUser.is_admin) {
+            if ((chat.messages || []).length > 0) return false;
+            return !hasPermission;
+        }
+
+        if (hasPermission) return false;
+
+        if((chat.messages || []).length === 0 && !hasPermission) return true;
+
+        return !hasPermission;
+        
+    }, [chat.type, loggedInUser, chatPartner, dmRequests, chat.messages]);
+    
+    const existingRequest = useMemo(() => {
+        if (!chatPartner || !dmRequests) return null;
+        return dmRequests.find(req =>
+            ((req.from_user_id === loggedInUser.id && req.to_user_id === chatPartner.id) ||
+             (req.from_user_id === chatPartner.id && req.to_user_id === loggedInUser.id))
+        );
+    }, [dmRequests, loggedInUser, chatPartner]);
+
     // Handle call initiation
     const handleStartCall = useCallback(async (callType: 'audio' | 'video') => {
         try {
@@ -366,73 +430,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         setActiveCall(null);
         setCallParticipants([]);
     }, [activeCall, supabase]);
-            })
-            .catch(err => console.error("Failed to load assets:", err));
-    }, []);
-
-    // `useMemo` is a performance optimization hook. It calculates a value and "memoizes" (remembers) it.
-    // The value is only recalculated if one of the dependencies (the array at the end) changes.
-    // This prevents expensive calculations on every single render.
-    const chatPartner = useMemo(() => {
-        if (chat.type !== 'dm' || !chat.participants) return null;
-        const partnerRecord = chat.participants.find(p => p.user_id !== loggedInUser.id);
-        return partnerRecord?.profiles ?? null;
-    }, [chat, loggedInUser.id]);
-    
-    const isGroup = chat.type === 'group' || chat.type === 'channel';
-
-    const isChannel = chat.type === 'channel';
-    const canPostInChannel = useMemo(() => 
-        isChannel && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin,
-    [chat, loggedInUser.id, isChannel]);
-    
-    const isChatPartnerBlocked = useMemo(() => {
-        if (!chatPartner || !blockedUsers) return false;
-        return blockedUsers.includes(chatPartner.id);
-    }, [blockedUsers, chatPartner]);
-    
-    const isGroupAdmin = useMemo(() => 
-        isGroup && chat.participants.find(p => p.user_id === loggedInUser.id)?.is_admin, 
-    [chat, loggedInUser.id, isGroup]);
-    
-    const pinnedMessages = useMemo(() => (chat.messages || []).filter(m => m.is_pinned), [chat.messages]);
-
-    const isDmRestricted = useMemo(() => {
-        if (chat.type !== 'dm' || !chatPartner || !dmRequests || loggedInUser.is_admin || chatPartner.is_admin) {
-            return false;
-        }
-
-        if (!(loggedInUser.gender && chatPartner.gender && loggedInUser.gender !== chatPartner.gender)) {
-            return false;
-        }
-
-        const hasPermission = dmRequests.some(req =>
-            req.status === 'approved' &&
-            ((req.from_user_id === loggedInUser.id && req.to_user_id === chatPartner.id) ||
-             (req.from_user_id === chatPartner.id && req.to_user_id === loggedInUser.id))
-        );
-        
-        const isChatWithGurudev = chatPartner?.role === 'gurudev';
-        if (isChatWithGurudev && !loggedInUser.is_admin) {
-            if ((chat.messages || []).length > 0) return false;
-            return !hasPermission;
-        }
-
-        if (hasPermission) return false;
-
-        if((chat.messages || []).length === 0 && !hasPermission) return true;
-
-        return !hasPermission;
-        
-    }, [chat.type, loggedInUser, chatPartner, dmRequests, chat.messages]);
-    
-    const existingRequest = useMemo(() => {
-        if (!chatPartner || !dmRequests) return null;
-        return dmRequests.find(req =>
-            ((req.from_user_id === loggedInUser.id && req.to_user_id === chatPartner.id) ||
-             (req.from_user_id === chatPartner.id && req.to_user_id === loggedInUser.id))
-        );
-    }, [dmRequests, loggedInUser, chatPartner]);
 
     // `useCallback` is another performance hook, similar to `useMemo`.
     // It memoizes a function, so it isn't recreated on every render.

@@ -56,7 +56,7 @@ interface VideoCallInterfaceProps {
 interface VideoTileProps {
   userId: string;
   user?: User;
-  stream?: MediaStream;
+  stream?: MediaStream | null;
   isMuted: boolean;
   isVideoOff: boolean;
   isScreenSharing: boolean;
