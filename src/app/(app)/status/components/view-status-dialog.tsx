@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { X, Pause, Play, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -15,7 +15,7 @@ type StatusUpdate = {
   user_id: string;
   name: string;
   avatar_url: string;
-  statuses: { id: number; media_url: string; created_at: string }[];
+  statuses: { id: number; media_url: string; created_at: string; caption?: string | null }[];
 };
 
 interface ViewStatusDialogProps {
@@ -117,6 +117,8 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
     e.stopPropagation();
     if (statusUpdate && currentIndex < statusUpdate.statuses.length - 1) {
       setCurrentIndex(prev => prev + 1);
+    } else {
+      onOpenChange(false);
     }
   };
 
@@ -133,6 +135,8 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[95vw] max-h-[95vh] sm:max-w-md w-full h-full sm:h-auto sm:aspect-[9/16] bg-black border-none p-0 overflow-hidden flex flex-col">
+        <DialogTitle className="sr-only">Status from {statusUpdate.name}</DialogTitle>
+        <DialogDescription className="sr-only">Viewing status update. Press escape to close.</DialogDescription>
         <div className="absolute top-0 left-0 right-0 p-3 z-10 bg-gradient-to-b from-black/50 to-transparent">
             <div className="flex items-center gap-2 mb-2">
                 {statusUpdate.statuses.map((_, index) => (
@@ -154,17 +158,24 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
                         <p className="text-xs text-white/80">{formatDistanceToNow(new Date(currentStatus.created_at), { addSuffix: true })}</p>
                     </div>
                 </div>
-                 <button onClick={handlePause} className="text-white">
+                 <button onClick={handlePause} className="text-white p-2">
                     {isPaused ? <Play /> : <Pause />}
                 </button>
             </div>
         </div>
 
-        <div className="relative flex-1" onMouseDown={() => setIsPaused(true)} onMouseUp={() => setIsPaused(false)} onTouchStart={() => setIsPaused(true)} onTouchEnd={() => setIsPaused(false)}>
+        <div className="relative flex-1 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute inset-0" onMouseDown={() => setIsPaused(true)} onMouseUp={() => setIsPaused(false)} onTouchStart={() => setIsPaused(true)} onTouchEnd={() => setIsPaused(false)} />
           <Image src={currentStatus.media_url} alt={`Status from ${statusUpdate.name}`} fill className="object-contain" />
           
           <button onClick={prevStatus} className="absolute left-0 top-0 bottom-0 w-1/3 z-20" aria-label="Previous status" />
           <button onClick={nextStatus} className="absolute right-0 top-0 bottom-0 w-1/3 z-20" aria-label="Next status" />
+
+          {currentStatus.caption && (
+            <div className="absolute bottom-0 left-0 right-0 p-4 pb-8 bg-gradient-to-t from-black/70 to-transparent z-10">
+                <p className="text-white text-center text-sm drop-shadow-md">{currentStatus.caption}</p>
+            </div>
+          )}
         </div>
 
       </DialogContent>

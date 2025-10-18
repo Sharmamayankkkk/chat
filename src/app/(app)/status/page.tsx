@@ -19,7 +19,7 @@ type StatusUpdate = {
     user_id: string;
     name: string;
     avatar_url: string;
-    statuses: { id: number; media_url: string; created_at: string; }[];
+    statuses: { id: number; media_url: string; created_at: string; caption?: string | null }[];
     is_all_viewed: boolean;
 };
 
@@ -37,10 +37,9 @@ export default function StatusPage() {
     const fetchStatuses = async () => {
         if (!loggedInUser) return;
         
-        // Fetch all recent statuses and their creators
         const { data, error } = await supabase
             .from('statuses')
-            .select('id, media_url, created_at, profiles:user_id(*), status_views!left(viewer_id)')
+            .select('id, media_url, created_at, caption, profiles:user_id(*), status_views!left(viewer_id)')
             .gt('expires_at', new Date().toISOString())
             .order('created_at', { ascending: false });
 
@@ -49,7 +48,6 @@ export default function StatusPage() {
             return;
         }
 
-        // Group statuses by user
         const grouped: { [key: string]: StatusUpdate } = {};
         data.forEach((status: any) => {
             const userId = status.profiles.id;
@@ -70,12 +68,12 @@ export default function StatusPage() {
                 id: status.id,
                 media_url: status.media_url,
                 created_at: status.created_at,
+                caption: status.caption,
             });
         });
 
         const myStatusUpdate = grouped[loggedInUser.id] || null;
         if (myStatusUpdate) {
-            // My status is always considered "viewed" by me in the list
             myStatusUpdate.is_all_viewed = true;
         }
         delete grouped[loggedInUser.id];
