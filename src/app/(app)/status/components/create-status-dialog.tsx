@@ -8,9 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Loader2, Image as ImageIcon, Send } from 'lucide-react';
 import Image from 'next/image';
 import { useToast } from '@/hooks/use-toast';
-import { useAppContext } from '@/providers/app-provider';
-import { v4 as uuidv4 } from 'uuid';
-import { createClient } from '@/lib/utils';
 
 interface CreateStatusDialogProps {
   open: boolean;
@@ -20,8 +17,6 @@ interface CreateStatusDialogProps {
 
 export function CreateStatusDialog({ open, onOpenChange, onStatusCreated }: CreateStatusDialogProps) {
   const { toast } = useToast();
-  const { loggedInUser } = useAppContext();
-  const supabase = createClient();
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -52,26 +47,24 @@ export function CreateStatusDialog({ open, onOpenChange, onStatusCreated }: Crea
   };
 
   const handleSubmit = async () => {
-    if (!file || !loggedInUser) return;
+    if (!file) return;
     setIsLoading(true);
 
     try {
-      const fileExt = file.name.split('.').pop();
-      const filePath = `public/statuses/${loggedInUser.id}/${uuidv4()}.${fileExt}`;
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('caption', caption);
 
-      const { error: uploadError } = await supabase.storage.from('attachments').upload(filePath, file);
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(filePath);
-
-      const { error: insertError } = await supabase.from('statuses').insert({
-        user_id: loggedInUser.id,
-        media_url: urlData.publicUrl,
-        media_type: 'image',
-        caption: caption,
+      const response = await fetch('/api/status', {
+        method: 'POST',
+        body: formData,
       });
 
-      if (insertError) throw insertError;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to post status');
+      }
 
       toast({ title: 'Status Posted!', description: 'Your status is now visible to others.' });
       onStatusCreated();

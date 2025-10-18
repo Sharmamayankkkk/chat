@@ -20,16 +20,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
     
-    // File upload
+    // File upload to the 'story' bucket
     const fileExt = file.name.split('.').pop();
-    const filePath = `public/statuses/${user.id}/${uuidv4()}.${fileExt}`;
+    // The path includes the user's ID as a folder, matching the storage policy
+    const filePath = `${user.id}/${uuidv4()}.${fileExt}`;
 
-    const { error: uploadError } = await supabase.storage.from('attachments').upload(filePath, file);
+    const { error: uploadError } = await supabase.storage.from('story').upload(filePath, file);
     if (uploadError) {
       throw uploadError;
     }
 
-    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(filePath);
+    const { data: urlData } = supabase.storage.from('story').getPublicUrl(filePath);
 
     // DB insert
     const { data: statusData, error: insertError } = await supabase
