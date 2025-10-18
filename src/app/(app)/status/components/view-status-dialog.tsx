@@ -22,7 +22,8 @@ type StatusUpdate = {
 };
 
 interface ViewStatusDialogProps {
-  statusUpdate: StatusUpdate | null;
+  allStatusUpdates: StatusUpdate[];
+  startIndex: number | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onStatusViewed: () => void;
@@ -87,10 +88,12 @@ function ViewersSheet({ statusId, viewCount }: { statusId: number, viewCount: nu
     )
 }
 
-export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusViewed }: ViewStatusDialogProps) {
+export function ViewStatusDialog({ allStatusUpdates, startIndex, open, onOpenChange, onStatusViewed }: ViewStatusDialogProps) {
   const { loggedInUser } = useAppContext();
   const supabase = createClient();
-  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const [currentUserIndex, setCurrentUserIndex] = useState(startIndex);
+  const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [viewCount, setViewCount] = useState(0);
@@ -99,6 +102,9 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef(0);
   const elapsedTimeRef = useRef(0);
+  
+  const statusUpdate = (currentUserIndex !== null) ? allStatusUpdates[currentUserIndex] : null;
+  const currentStatus = statusUpdate?.statuses[currentStoryIndex];
 
   const markAsViewed = useCallback(async (statusId: number) => {
     if (!loggedInUser || !statusUpdate || loggedInUser.id === statusUpdate.user_id) return;
@@ -110,14 +116,11 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
   }, [loggedInUser, supabase, onStatusViewed, statusUpdate]);
 
   const fetchViewCount = useCallback(async (statusId: number) => {
-      const { count, error } = await supabase
+      const { count } = await supabase
         .from('status_views')
         .select('*', { count: 'exact', head: true })
         .eq('status_id', statusId);
-
-      if (!error) {
-          setViewCount(count || 0);
-      }
+      setViewCount(count || 0);
   }, [supabase]);
   
   const stopTimer = useCallback(() => {
@@ -125,13 +128,30 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
   }, []);
 
+  const goToNextStory = useCallback(() => {
+    if (statusUpdate && currentStoryIndex < statusUpdate.statuses.length - 1) {
+      setCurrentStoryIndex(prev => prev + 1);
+    } else {
+      goToNextUser();
+    }
+  }, [statusUpdate, currentStoryIndex]);
+  
+  const goToNextUser = useCallback(() => {
+    if (currentUserIndex !== null && currentUserIndex < allStatusUpdates.length - 1) {
+        setCurrentUserIndex(prev => prev! + 1);
+        setCurrentStoryIndex(0);
+    } else {
+        onOpenChange(false);
+    }
+  }, [currentUserIndex, allStatusUpdates.length, onOpenChange]);
+
   const startTimer = useCallback(() => {
     stopTimer();
-    if (!statusUpdate || isPaused) return;
+    if (!currentStatus || isPaused) return;
 
-    markAsViewed(statusUpdate.statuses[currentIndex].id);
-    if (loggedInUser?.id === statusUpdate.user_id) {
-        fetchViewCount(statusUpdate.statuses[currentIndex].id);
+    markAsViewed(currentStatus.id);
+    if (loggedInUser?.id === statusUpdate?.user_id) {
+        fetchViewCount(currentStatus.id);
     }
     
     startTimeRef.current = performance.now() - elapsedTimeRef.current;
@@ -147,47 +167,38 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
     };
     animationFrameRef.current = requestAnimationFrame(animate);
 
-    timeoutRef.current = setTimeout(() => {
-      if (currentIndex < statusUpdate.statuses.length - 1) {
-        setCurrentIndex(prev => prev + 1);
-      } else {
-        onOpenChange(false);
-      }
-    }, STATUS_DURATION - elapsedTimeRef.current);
-  }, [currentIndex, isPaused, statusUpdate, onOpenChange, stopTimer, markAsViewed, fetchViewCount, loggedInUser]);
-
+    timeoutRef.current = setTimeout(goToNextStory, STATUS_DURATION - elapsedTimeRef.current);
+  }, [currentStatus, isPaused, stopTimer, markAsViewed, fetchViewCount, loggedInUser, statusUpdate, goToNextStory]);
+  
+  // Effect to handle opening/closing and user switching
   useEffect(() => {
-    setProgress(0);
-    elapsedTimeRef.current = 0;
-
-    if (open && statusUpdate) {
-      startTimer();
+    if (open && startIndex !== null) {
+      setCurrentUserIndex(startIndex);
+      setCurrentStoryIndex(0);
     } else {
       stopTimer();
-      setCurrentIndex(0);
     }
-
+  }, [open, startIndex, stopTimer]);
+  
+  // Effect to handle story and user index changes
+  useEffect(() => {
+    if (open && currentUserIndex !== null) {
+        setProgress(0);
+        elapsedTimeRef.current = 0;
+        startTimer();
+    }
     return stopTimer;
-  }, [open, currentIndex, statusUpdate, startTimer, stopTimer]);
+  }, [open, currentUserIndex, currentStoryIndex, startTimer, stopTimer]);
   
   const handlePausePlay = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     setIsPaused(prev => !prev);
   };
   
-  const nextStatus = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (statusUpdate && currentIndex < statusUpdate.statuses.length - 1) {
-      setCurrentIndex(prev => prev + 1);
-    } else {
-      onOpenChange(false);
-    }
-  };
-
-  const prevStatus = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (currentIndex > 0) {
-      setCurrentIndex(prev => prev - 1);
+  const goToPrevUser = () => {
+    if (currentUserIndex !== null && currentUserIndex > 0) {
+      setCurrentUserIndex(prev => prev! - 1);
+      setCurrentStoryIndex(0);
     }
   };
 
@@ -200,9 +211,7 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
     }
   }, [isPaused, open, startTimer, stopTimer, progress]);
 
-
-  if (!statusUpdate) return null;
-  const currentStatus = statusUpdate.statuses[currentIndex];
+  if (!statusUpdate || !currentStatus) return null;
   const isMyStatus = loggedInUser?.id === statusUpdate.user_id;
 
   return (
@@ -211,12 +220,12 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
         <DialogTitle className="sr-only">Status from {statusUpdate.name}</DialogTitle>
         <DialogDescription className="sr-only">Viewing status update. Press escape to close.</DialogDescription>
         
-        <div className="absolute top-0 left-0 right-0 p-3 z-10 bg-gradient-to-b from-black/50 to-transparent">
+        <div className="absolute top-0 left-0 right-0 p-3 z-20 bg-gradient-to-b from-black/50 to-transparent">
             <div className="flex items-center gap-2 mb-2">
                 {statusUpdate.statuses.map((_, index) => (
                     <Progress
                         key={index}
-                        value={index < currentIndex ? 100 : index === currentIndex ? progress : 0}
+                        value={index < currentStoryIndex ? 100 : index === currentStoryIndex ? progress : 0}
                         className="h-1 flex-1 bg-white/30"
                     />
                 ))}
@@ -233,7 +242,7 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
                     </div>
                 </div>
                 <div className="flex items-center">
-                     <button onClick={handlePausePlay} className="text-white p-2">
+                    <button onClick={handlePausePlay} className="text-white p-2">
                         {isPaused ? <Play /> : <Pause />}
                     </button>
                     <button onClick={() => onOpenChange(false)} className="text-white p-2">
@@ -247,8 +256,21 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
           <div className="absolute inset-0" onMouseDown={() => setIsPaused(true)} onMouseUp={() => setIsPaused(false)} onTouchStart={() => setIsPaused(true)} onTouchEnd={() => setIsPaused(false)} />
           {currentStatus?.media_url && <Image src={currentStatus.media_url} alt={`Status from ${statusUpdate.name}`} fill className="object-contain" />}
           
-          <button onClick={prevStatus} className="absolute left-0 top-0 bottom-0 w-1/3 z-20" aria-label="Previous status" />
-          <button onClick={nextStatus} className="absolute right-0 top-0 bottom-0 w-1/3 z-20" aria-label="Next status" />
+          {/* Navigation Buttons */}
+          {currentUserIndex !== null && currentUserIndex > 0 && (
+            <button onClick={goToPrevUser} className="absolute left-2 top-1/2 -translate-y-1/2 z-30 bg-black/30 text-white rounded-full p-1">
+              <ChevronLeft size={24} />
+            </button>
+          )}
+          {currentUserIndex !== null && currentUserIndex < allStatusUpdates.length - 1 && (
+            <button onClick={goToNextUser} className="absolute right-2 top-1/2 -translate-y-1/2 z-30 bg-black/30 text-white rounded-full p-1">
+              <ChevronRight size={24} />
+            </button>
+          )}
+          
+          <button onClick={(e) => { e.stopPropagation(); setCurrentStoryIndex(p => Math.max(0, p - 1))}} className="absolute left-0 top-0 bottom-0 w-1/3 z-20" aria-label="Previous story" />
+          <button onClick={(e) => { e.stopPropagation(); goToNextStory() }} className="absolute right-0 top-0 bottom-0 w-1/3 z-20" aria-label="Next story" />
+
 
           {currentStatus.caption && (
             <div className="absolute bottom-0 left-0 right-0 p-4 pb-16 bg-gradient-to-t from-black/70 to-transparent z-10">

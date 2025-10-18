@@ -32,14 +32,17 @@ export default function StatusPage() {
     const [myStatus, setMyStatus] = useState<StatusUpdate | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
-    const [viewingStatus, setViewingStatus] = useState<StatusUpdate | null>(null);
+    
+    // State to manage the viewer dialog
+    const [viewingStatusIndex, setViewingStatusIndex] = useState<number | null>(null);
+    const [isMyStatusViewing, setIsMyStatusViewing] = useState(false);
 
     const fetchStatuses = async () => {
         if (!loggedInUser) return;
         
         const { data, error } = await supabase
             .from('statuses')
-            .select('*, profiles:user_id(*), status_views!left(viewer_id)')
+            .select('*, profile:user_id(*), status_views!left(viewer_id)')
             .gt('expires_at', new Date().toISOString())
             .order('created_at', { ascending: false });
 
@@ -50,12 +53,12 @@ export default function StatusPage() {
 
         const grouped: { [key: string]: StatusUpdate } = {};
         data.forEach((status: any) => {
-            const userId = status.profiles.id;
+            const userId = status.profile.id;
             if (!grouped[userId]) {
                 grouped[userId] = {
                     user_id: userId,
-                    name: status.profiles.name,
-                    avatar_url: status.profiles.avatar_url,
+                    name: status.profile.name,
+                    avatar_url: status.profile.avatar_url,
                     statuses: [],
                     is_all_viewed: true,
                 };
@@ -74,7 +77,6 @@ export default function StatusPage() {
 
         const myStatusUpdate = grouped[loggedInUser.id] || null;
         if (myStatusUpdate) {
-            // My own status is always considered "viewed" in the list context
             myStatusUpdate.is_all_viewed = true;
         }
 
@@ -106,9 +108,28 @@ export default function StatusPage() {
     }, [statusUpdates]);
     
     if (!loggedInUser) return <Skeleton className="h-full w-full" />;
+    
+    const combinedUpdates = [...recentUpdates, ...viewedUpdates];
 
-    const StatusRow = ({ update }: { update: StatusUpdate }) => (
-        <div onClick={() => setViewingStatus(update)} className="flex items-center gap-4 cursor-pointer hover:bg-muted p-2 rounded-lg">
+    const openStatusViewer = (index: number) => {
+        setIsMyStatusViewing(false);
+        setViewingStatusIndex(index);
+    };
+
+    const openMyStatusViewer = () => {
+        if (myStatus) {
+            setIsMyStatusViewing(true);
+            setViewingStatusIndex(0); // Index for myStatus within its own list
+        }
+    };
+    
+    const handleCloseViewer = () => {
+        setViewingStatusIndex(null);
+        setIsMyStatusViewing(false);
+    }
+
+    const StatusRow = ({ update, index }: { update: StatusUpdate, index: number }) => (
+        <div onClick={() => openStatusViewer(index)} className="flex items-center gap-4 cursor-pointer hover:bg-muted p-2 rounded-lg">
             <Avatar className={`h-14 w-14 border-2 ${update.is_all_viewed ? 'border-border' : 'border-primary'}`}>
                 <AvatarImage src={update.avatar_url} alt={update.name} />
                 <AvatarFallback>{update.name.charAt(0)}</AvatarFallback>
@@ -123,7 +144,13 @@ export default function StatusPage() {
     return (
         <>
             <CreateStatusDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} onStatusCreated={fetchStatuses} />
-            <ViewStatusDialog statusUpdate={viewingStatus} open={!!viewingStatus} onOpenChange={() => setViewingStatus(null)} onStatusViewed={fetchStatuses} />
+            <ViewStatusDialog 
+                allStatusUpdates={isMyStatusViewing && myStatus ? [myStatus] : combinedUpdates}
+                startIndex={viewingStatusIndex}
+                open={viewingStatusIndex !== null} 
+                onOpenChange={handleCloseViewer}
+                onStatusViewed={fetchStatuses} 
+            />
 
             <div className="flex h-full flex-col">
                 <header className="flex items-center gap-4 p-4 border-b bg-background sticky top-0 z-10">
@@ -133,7 +160,7 @@ export default function StatusPage() {
                 <main className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
                     <div className="flex items-center gap-4 p-2">
                         <div className="relative">
-                           <button onClick={() => myStatus && setViewingStatus(myStatus)} disabled={!myStatus} className="disabled:pointer-events-none">
+                           <button onClick={openMyStatusViewer} disabled={!myStatus} className="disabled:pointer-events-none">
                                 <Avatar className="h-14 w-14">
                                     <AvatarImage src={myStatus?.statuses[0]?.media_url || loggedInUser.avatar_url} alt="My Status" className="object-cover" />
                                     <AvatarFallback>{loggedInUser.name.charAt(0)}</AvatarFallback>
@@ -143,7 +170,7 @@ export default function StatusPage() {
                                 <Plus className="h-4 w-4" />
                             </button>
                         </div>
-                        <div onClick={() => myStatus && setViewingStatus(myStatus)} className="cursor-pointer">
+                        <div onClick={openMyStatusViewer} className="cursor-pointer">
                             <p className="font-semibold">My Status</p>
                             <p className="text-sm text-muted-foreground">
                                 {myStatus ? `${myStatus.statuses.length} updates` : 'Tap to add a status update'}
@@ -160,17 +187,17 @@ export default function StatusPage() {
                     ) : (
                         <>
                             {recentUpdates.length > 0 && (
-                                <div className="space-y-4">
+                                <div className="space-y-2">
                                     <h3 className="text-sm font-semibold text-muted-foreground px-2">RECENT UPDATES</h3>
-                                    {recentUpdates.map(update => <StatusRow key={update.user_id} update={update} />)}
+                                    {recentUpdates.map((update, idx) => <StatusRow key={update.user_id} update={update} index={idx} />)}
                                 </div>
                             )}
                             {viewedUpdates.length > 0 && (
                                 <>
                                     <Separator />
-                                    <div className="space-y-4">
+                                    <div className="space-y-2">
                                         <h3 className="text-sm font-semibold text-muted-foreground px-2">VIEWED UPDATES</h3>
-                                        {viewedUpdates.map(update => <StatusRow key={update.user_id} update={update} />)}
+                                        {viewedUpdates.map((update, idx) => <StatusRow key={update.user_id} update={update} index={recentUpdates.length + idx} />)}
                                     </div>
                                 </>
                             )}
