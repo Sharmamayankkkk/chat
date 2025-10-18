@@ -45,6 +45,8 @@ export async function POST(request: Request) {
         .single();
     
     if (insertError) {
+        // If the DB insert fails, try to delete the uploaded file
+        await supabase.storage.from('story').remove([filePath]);
         throw insertError;
     }
 

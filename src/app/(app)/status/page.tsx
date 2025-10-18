@@ -73,9 +73,6 @@ export default function StatusPage() {
         });
 
         const myStatusUpdate = grouped[loggedInUser.id] || null;
-        if (myStatusUpdate) {
-            myStatusUpdate.is_all_viewed = true;
-        }
         delete grouped[loggedInUser.id];
 
         const allUpdates = Object.values(grouped);

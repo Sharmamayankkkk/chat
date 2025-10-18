@@ -166,7 +166,7 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
 
         <div className="relative flex-1 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
           <div className="absolute inset-0" onMouseDown={() => setIsPaused(true)} onMouseUp={() => setIsPaused(false)} onTouchStart={() => setIsPaused(true)} onTouchEnd={() => setIsPaused(false)} />
-          <Image src={currentStatus.media_url} alt={`Status from ${statusUpdate.name}`} fill className="object-contain" />
+          {currentStatus?.media_url && <Image src={currentStatus.media_url} alt={`Status from ${statusUpdate.name}`} fill className="object-contain" />}
           
           <button onClick={prevStatus} className="absolute left-0 top-0 bottom-0 w-1/3 z-20" aria-label="Previous status" />
           <button onClick={nextStatus} className="absolute right-0 top-0 bottom-0 w-1/3 z-20" aria-label="Next status" />
