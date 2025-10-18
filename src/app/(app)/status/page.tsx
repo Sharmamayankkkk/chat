@@ -40,7 +40,7 @@ export default function StatusPage() {
         // Fetch all recent statuses and their creators
         const { data, error } = await supabase
             .from('statuses')
-            .select('id, media_url, created_at, profiles!inner(*), status_views!left(viewer_id)')
+            .select('id, media_url, created_at, profiles:user_id(*), status_views!left(viewer_id)')
             .gt('expires_at', new Date().toISOString())
             .order('created_at', { ascending: false });
 
