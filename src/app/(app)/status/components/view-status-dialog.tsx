@@ -5,11 +5,14 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
-import { X, Pause, Play, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Pause, Play, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
 import Image from 'next/image';
 import { createClient } from '@/lib/utils';
 import { useAppContext } from '@/providers/app-provider';
 import { formatDistanceToNow } from 'date-fns';
+import type { User } from '@/lib/types';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 type StatusUpdate = {
   user_id: string;
@@ -27,90 +30,149 @@ interface ViewStatusDialogProps {
 
 const STATUS_DURATION = 5000; // 5 seconds per status
 
+function ViewersSheet({ statusId, viewCount }: { statusId: number, viewCount: number }) {
+    const [viewers, setViewers] = useState<User[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const supabase = createClient();
+
+    const fetchViewers = async () => {
+        setIsLoading(true);
+        const { data, error } = await supabase
+            .from('status_views')
+            .select('profiles:viewer_id(*)')
+            .eq('status_id', statusId);
+        
+        if (!error && data) {
+            setViewers(data.map(d => d.profiles) as User[]);
+        }
+        setIsLoading(false);
+    }
+
+    return (
+        <Sheet>
+            <SheetTrigger asChild>
+                <button 
+                    onClick={fetchViewers}
+                    className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 text-white bg-black/30 backdrop-blur-sm px-3 py-1.5 rounded-full text-sm"
+                >
+                    <Eye className="h-4 w-4" />
+                    <span>{viewCount}</span>
+                </button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="rounded-t-lg">
+                <SheetHeader>
+                    <SheetTitle>Viewed by</SheetTitle>
+                </SheetHeader>
+                <ScrollArea className="h-64 mt-4">
+                    {isLoading ? (
+                        <p>Loading...</p>
+                    ) : viewers.length > 0 ? (
+                        <div className="space-y-4">
+                            {viewers.map(viewer => (
+                                <div key={viewer.id} className="flex items-center gap-3">
+                                    <Avatar>
+                                        <AvatarImage src={viewer.avatar_url} />
+                                        <AvatarFallback>{viewer.name.charAt(0)}</AvatarFallback>
+                                    </Avatar>
+                                    <p className="font-semibold">{viewer.name}</p>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-center text-muted-foreground pt-10">No views yet.</p>
+                    )}
+                </ScrollArea>
+            </SheetContent>
+        </Sheet>
+    )
+}
+
 export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusViewed }: ViewStatusDialogProps) {
   const { loggedInUser } = useAppContext();
   const supabase = createClient();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [viewCount, setViewCount] = useState(0);
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef(0);
+  const elapsedTimeRef = useRef(0);
 
   const markAsViewed = useCallback(async (statusId: number) => {
-    if (!loggedInUser) return;
+    if (!loggedInUser || !statusUpdate || loggedInUser.id === statusUpdate.user_id) return;
     await supabase.from('status_views').insert({
         status_id: statusId,
         viewer_id: loggedInUser.id,
     }, { onConflict: 'status_id, viewer_id' });
     onStatusViewed();
-  }, [loggedInUser, supabase, onStatusViewed]);
+  }, [loggedInUser, supabase, onStatusViewed, statusUpdate]);
+
+  const fetchViewCount = useCallback(async (statusId: number) => {
+      const { count, error } = await supabase
+        .from('status_views')
+        .select('*', { count: 'exact', head: true })
+        .eq('status_id', statusId);
+
+      if (!error) {
+          setViewCount(count || 0);
+      }
+  }, [supabase]);
   
-  const resetTimer = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-    setProgress(0);
-    startTimeRef.current = 0;
+  const stopTimer = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
   }, []);
-  
+
   const startTimer = useCallback(() => {
-    resetTimer();
+    stopTimer();
     if (!statusUpdate || isPaused) return;
 
     markAsViewed(statusUpdate.statuses[currentIndex].id);
-    startTimeRef.current = Date.now();
+    if (loggedInUser?.id === statusUpdate.user_id) {
+        fetchViewCount(statusUpdate.statuses[currentIndex].id);
+    }
+    
+    startTimeRef.current = performance.now() - elapsedTimeRef.current;
 
-    progressIntervalRef.current = setInterval(() => {
-        const elapsed = Date.now() - startTimeRef.current;
-        const newProgress = (elapsed / STATUS_DURATION) * 100;
-        setProgress(newProgress);
-    }, 100);
+    const animate = (time: number) => {
+      elapsedTimeRef.current = time - startTimeRef.current;
+      const newProgress = (elapsedTimeRef.current / STATUS_DURATION) * 100;
+      setProgress(newProgress);
 
-    timerRef.current = setTimeout(() => {
-        if (currentIndex < statusUpdate.statuses.length - 1) {
-            setCurrentIndex(prev => prev + 1);
-        } else {
-            onOpenChange(false);
-        }
-    }, STATUS_DURATION);
-  }, [currentIndex, isPaused, statusUpdate, onOpenChange, resetTimer, markAsViewed]);
+      if (elapsedTimeRef.current < STATUS_DURATION) {
+        animationFrameRef.current = requestAnimationFrame(animate);
+      }
+    };
+    animationFrameRef.current = requestAnimationFrame(animate);
 
+    timeoutRef.current = setTimeout(() => {
+      if (currentIndex < statusUpdate.statuses.length - 1) {
+        setCurrentIndex(prev => prev + 1);
+      } else {
+        onOpenChange(false);
+      }
+    }, STATUS_DURATION - elapsedTimeRef.current);
+  }, [currentIndex, isPaused, statusUpdate, onOpenChange, stopTimer, markAsViewed, fetchViewCount, loggedInUser]);
 
   useEffect(() => {
+    setProgress(0);
+    elapsedTimeRef.current = 0;
+
     if (open && statusUpdate) {
-        startTimer();
+      startTimer();
     } else {
-        resetTimer();
-        setCurrentIndex(0);
+      stopTimer();
+      setCurrentIndex(0);
     }
-    return resetTimer;
-  }, [open, currentIndex, statusUpdate, startTimer, resetTimer]);
+
+    return stopTimer;
+  }, [open, currentIndex, statusUpdate, startTimer, stopTimer]);
   
-  const handlePause = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (isPaused) {
-        const remainingTime = STATUS_DURATION * (1 - progress / 100);
-        startTimeRef.current = Date.now() - (STATUS_DURATION - remainingTime);
-
-        progressIntervalRef.current = setInterval(() => {
-             const elapsed = Date.now() - startTimeRef.current;
-             const newProgress = (elapsed / STATUS_DURATION) * 100;
-             setProgress(newProgress);
-        }, 100);
-
-        timerRef.current = setTimeout(() => {
-            if (statusUpdate && currentIndex < statusUpdate.statuses.length - 1) {
-                setCurrentIndex(prev => prev + 1);
-            } else {
-                onOpenChange(false);
-            }
-        }, remainingTime);
-    } else {
-        if (timerRef.current) clearTimeout(timerRef.current);
-        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-    }
-    setIsPaused(!isPaused);
+  const handlePausePlay = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setIsPaused(prev => !prev);
   };
   
   const nextStatus = (e: React.MouseEvent) => {
@@ -129,14 +191,25 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
     }
   };
 
+  useEffect(() => {
+    if (isPaused) {
+      stopTimer();
+    } else if (open) {
+      startTimer();
+    }
+  }, [isPaused, open, startTimer, stopTimer]);
+
+
   if (!statusUpdate) return null;
   const currentStatus = statusUpdate.statuses[currentIndex];
+  const isMyStatus = loggedInUser?.id === statusUpdate.user_id;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[95vw] max-h-[95vh] sm:max-w-md w-full h-full sm:h-auto sm:aspect-[9/16] bg-black border-none p-0 overflow-hidden flex flex-col">
         <DialogTitle className="sr-only">Status from {statusUpdate.name}</DialogTitle>
         <DialogDescription className="sr-only">Viewing status update. Press escape to close.</DialogDescription>
+        
         <div className="absolute top-0 left-0 right-0 p-3 z-10 bg-gradient-to-b from-black/50 to-transparent">
             <div className="flex items-center gap-2 mb-2">
                 {statusUpdate.statuses.map((_, index) => (
@@ -158,7 +231,7 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
                         <p className="text-xs text-white/80">{formatDistanceToNow(new Date(currentStatus.created_at), { addSuffix: true })}</p>
                     </div>
                 </div>
-                 <button onClick={handlePause} className="text-white p-2">
+                 <button onClick={handlePausePlay} className="text-white p-2">
                     {isPaused ? <Play /> : <Pause />}
                 </button>
             </div>
@@ -172,12 +245,13 @@ export function ViewStatusDialog({ statusUpdate, open, onOpenChange, onStatusVie
           <button onClick={nextStatus} className="absolute right-0 top-0 bottom-0 w-1/3 z-20" aria-label="Next status" />
 
           {currentStatus.caption && (
-            <div className="absolute bottom-0 left-0 right-0 p-4 pb-8 bg-gradient-to-t from-black/70 to-transparent z-10">
+            <div className="absolute bottom-0 left-0 right-0 p-4 pb-16 bg-gradient-to-t from-black/70 to-transparent z-10">
                 <p className="text-white text-center text-sm drop-shadow-md">{currentStatus.caption}</p>
             </div>
           )}
-        </div>
 
+          {isMyStatus && <ViewersSheet statusId={currentStatus.id} viewCount={viewCount} />}
+        </div>
       </DialogContent>
     </Dialog>
   );

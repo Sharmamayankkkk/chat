@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -64,10 +65,6 @@ const SheetContent = React.forwardRef<
       className={cn(sheetVariants({ side }), className)}
       {...props}
     >
-      <SheetTitle className="sr-only">Sheet</SheetTitle>
-      <SheetDescription className="sr-only">
-        A container for content that slides in from the edge of the screen.
-      </SheetDescription>
       {children}
       <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
         <X className="h-4 w-4" />
@@ -84,7 +81,7 @@ const SheetHeader = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex flex-col space-y-2 text-center sm:text-left",
+      "flex flex-col space-y-1.5 text-center sm:text-left",
       className
     )}
     {...props}
