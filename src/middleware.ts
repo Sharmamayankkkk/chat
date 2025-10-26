@@ -47,7 +47,7 @@ export async function middleware(request: NextRequest) {
   
   // Check if the current path is a public route or an API/join route
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
-  if (isPublicRoute || pathname.startsWith('/api') || pathname.startsWith('/join/')) {
+  if (isPublicRoute || pathname.startsWith('/api') || pathname.startsWith('/join/') || pathname.startsWith('/.well-known/')) {
     return response;
   }
   
@@ -90,6 +90,6 @@ export const config = {
      * - favicon.ico (favicon file)
      * - and files with common image/asset extensions
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
   ],
 }
