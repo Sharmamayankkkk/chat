@@ -21,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import type { Chat, User, Message, AttachmentMetadata } from '@/lib/types';
+import type { Chat, User, Message, AttachmentMetadata, CallType } from '@/lib/types';
 import { cn, getContrastingTextColor, createClient } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
@@ -42,6 +42,7 @@ import { ImageViewerDialog } from './image-viewer';
 import { MessageInfoDialog } from './message-info-dialog';
 import { ChatInput } from './chat-input';
 import { TranslateDialog } from './translate-dialog';
+import { useCall } from '@/providers/call-provider';
 
 
 interface ChatProps {
@@ -137,6 +138,25 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
         blockedUsers,
         forwardMessage,
     } = useAppContext();
+
+    // Call functionality hook
+    const { initiateCall } = useCall();
+
+    // Test call functionality
+    const handleCallClick = useCallback((type: CallType) => {
+        if (!chatPartner) {
+            toast({ variant: 'destructive', title: 'Error', description: 'No chat partner found' });
+            return;
+        }
+        
+        if (!initiateCall) {
+            toast({ variant: 'destructive', title: 'Error', description: 'Call functionality not available' });
+            return;
+        }
+
+        console.log(`Initiating ${type} call`, { chatId: chat.id, partnerId: chatPartner.id });
+        initiateCall(chat.id, chatPartner.id, type);
+    }, [initiateCall, chat.id, chatPartner, toast]);
 
     // These are "state" variables. They hold data that can change and cause the component to re-render.
     // `useState` is a fundamental React hook for managing component state.
@@ -1138,8 +1158,41 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                     </Tooltip>
                 </TooltipProvider>
             )}
-            <Button variant="ghost" size="icon" onClick={() => toast({ title: "Coming Soon", description: "Voice calls will be available soon." })}><Phone className="h-5 w-5"/></Button>
-            <Button variant="ghost" size="icon" onClick={() => toast({ title: "Coming Soon", description: "Video calls will be available soon." })}><Video className="h-5 w-5"/></Button>
+            
+            {/* Call buttons - only show for DMs when not blocked and no pending DM request */}
+            {!isGroup && chatPartner && !isChatPartnerBlocked && !isDmRestricted && (
+                <>
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    onClick={() => handleCallClick('audio')}
+                                >
+                                    <Phone className="h-5 w-5"/>
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Audio call</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                    
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    onClick={() => handleCallClick('video')}
+                                >
+                                    <Video className="h-5 w-5"/>
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Video call</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                </>
+            )}
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon">
