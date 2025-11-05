@@ -1,5 +1,4 @@
-
-'use client'
+'use client';
 
 import { useState } from "react"
 import Link from "next/link"
@@ -13,13 +12,14 @@ import { useAppContext } from "@/providers/app-provider"
 import { useToast } from "@/hooks/use-toast"
 import { Separator } from "@/components/ui/separator"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
-import { Rocket, ArrowLeft, Loader2 } from "lucide-react"
+import { Rocket, ArrowLeft, Loader2, LockKeyhole } from "lucide-react" // Added LockKeyhole
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/utils"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 
 export default function SettingsPage() {
-  const { loggedInUser } = useAppContext();
+  // --- UPDATED: Added updateUser ---
+  const { loggedInUser, updateUser } = useAppContext();
   const { toast } = useToast();
   const router = useRouter();
   const supabase = createClient();
@@ -52,6 +52,25 @@ export default function SettingsPage() {
     } else {
         toast({ title: "Password Updated", description: "Your password has been changed successfully." });
         setNewPassword('');
+    }
+  };
+
+  // --- NEW: Handler for the privacy toggle ---
+  const handlePrivacyToggle = async (isPrivate: boolean) => {
+    // Optimistically update the UI (though AppProvider will do this)
+    // and call the updateUser function from our context.
+    try {
+      await updateUser({ is_private: isPrivate });
+      toast({
+        title: "Privacy Updated",
+        description: `Your profile is now ${isPrivate ? 'private' : 'public'}.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error updating privacy",
+        description: error.message,
+      });
     }
   };
 
@@ -103,6 +122,35 @@ export default function SettingsPage() {
               </Link>
           </CardFooter>
         </Card>
+        
+        {/* --- NEW: Privacy Settings Card --- */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Privacy</CardTitle>
+            <CardDescription>
+              Manage your account's privacy settings.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between rounded-lg border p-4">
+                <div>
+                  <Label htmlFor="private-profile" className="font-medium flex items-center">
+                    <LockKeyhole className="h-4 w-4 mr-2" />
+                    Private Profile
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    If enabled, other users must request to follow you to see your details and posts.
+                  </p>
+                </div>
+                <Switch 
+                  id="private-profile" 
+                  checked={loggedInUser.is_private}
+                  onCheckedChange={handlePrivacyToggle}
+                />
+            </div>
+          </CardContent>
+        </Card>
+        {/* --- END: New Card --- */}
 
         <Card>
           <CardHeader>

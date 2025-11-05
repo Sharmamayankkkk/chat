@@ -1,43 +1,56 @@
-
 'use client'
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { MessageSquare, Calendar, Users, Compass } from 'lucide-react'
+import { MessageSquare, Calendar, Users, Compass, Bell } from 'lucide-react' // Import Bell
 import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
+  SidebarMenuBadge, // Import Badge
 } from '@/components/ui/sidebar'
-import { cn } from '@/lib/utils'
+import { useAppContext } from '@/providers/app-provider' // Import useAppContext
+import { useMemo } from 'react'
 
 export function MainNav() {
   const pathname = usePathname()
+  const { notifications } = useAppContext() // Get notifications
+
+  // Calculate unread notification count
+  const unreadCount = useMemo(() => {
+    return notifications.filter(n => !n.is_read).length;
+  }, [notifications]);
 
   const menuItems = [
     {
       href: '/explore',
       label: 'Explore',
-      icon: Users,
+      icon: Compass,
       isActive: pathname.startsWith('/explore'),
+      badge: 0, // No badge for explore
     },
     {
       href: '/chat',
       label: 'Chats',
       icon: MessageSquare,
       isActive: pathname.startsWith('/chat') || pathname === '/',
+      badge: 0, // We'll use the one from chat.unreadCount, but not here
     },
+    // --- NEW NOTIFICATIONS LINK ---
     {
-      href: '/status',
-      label: 'Status',
-      icon: Compass,
-      isActive: pathname.startsWith('/status'),
+      href: '/notifications',
+      label: 'Notifications',
+      icon: Bell,
+      isActive: pathname.startsWith('/notifications'),
+      badge: unreadCount, // Show unread count
     },
+    // --- END NEW LINK ---
     {
       href: '/events',
       label: 'Events',
       icon: Calendar,
       isActive: pathname.startsWith('/events'),
+      badge: 0,
     },
   ]
 
@@ -54,6 +67,9 @@ export function MainNav() {
                 <Link href={item.href}>
                   <item.icon className="h-5 w-5 mr-3" />
                   <span>{item.label}</span>
+                  {item.badge > 0 && (
+                    <SidebarMenuBadge>{item.badge}</SidebarMenuBadge>
+                  )}
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

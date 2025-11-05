@@ -3,13 +3,27 @@
 import type { User } from './auth';
 import type { Chat, Message } from './chat';
 
-// NEW: Define the Relationship type to match the database
+// --- NEW NOTIFICATION TYPE ---
+export type NotificationType = 'follow_request' | 'new_follower' | 'new_like' | 'new_comment';
+
+export type Notification = {
+  id: number;
+  user_id: string; // The user who received the notification
+  actor_id: string; // The user who triggered the notification
+  type: NotificationType;
+  entity_id: number | null; // e.g., Post ID
+  is_read: boolean;
+  created_at: string;
+  actor: User; // This is the joined profile of the 'actor_id'
+};
+// --- END NEW TYPE ---
+
 export type RelationshipStatus = 'pending' | 'approved' | 'blocked';
 
 export type Relationship = {
   id: number;
-  user_one_id: string; // The user initiating the action
-  user_two_id: string; // The user being acted upon
+  user_one_id: string;
+  user_two_id: string;
   status: RelationshipStatus;
   created_at: string;
 };
@@ -22,12 +36,13 @@ export type ThemeSettings = {
   wallpaperBrightness: number;
 };
 
-// UPDATED: This is the new "contract" for our AppContext
+// UPDATED: AppContextType now includes notifications
 export interface AppContextType {
   loggedInUser: User | null;
   allUsers: User[];
   chats: Chat[];
-  relationships: Relationship[]; // REPLACED dmRequests and blockedUsers
+  relationships: Relationship[];
+  notifications: Notification[]; // <-- ADDED
   
   addChat: (newChat: Chat) => void;
   updateUser: (updates: Partial<User>) => Promise<void>;
@@ -35,7 +50,6 @@ export interface AppContextType {
   deleteGroup: (chatId: number) => Promise<void>;
   forwardMessage: (message: Message, chatIds: number[]) => Promise<void>;
 
-  // NEW functions
   followUser: (targetId: string) => Promise<void>;
   approveFollow: (requestorId: string) => Promise<void>;
   rejectFollow: (requestorId: string) => Promise<void>;
@@ -43,6 +57,8 @@ export interface AppContextType {
   removeFollower: (targetId: string) => Promise<void>;
   blockUser: (targetId: string) => Promise<void>;
   unblockUser: (targetId: string) => Promise<void>;
+
+  markNotificationsAsRead: () => Promise<void>; // <-- ADDED
 
   themeSettings: ThemeSettings;
   setThemeSettings: (newSettings: Partial<ThemeSettings>) => void;

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -11,7 +10,7 @@ import { useAppContext } from "@/providers/app-provider";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ShieldCheck, Loader2 } from "lucide-react";
+import { ArrowLeft, ShieldCheck, Loader2, LockKeyhole } from "lucide-react"; // Added LockKeyhole
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/utils";
@@ -19,6 +18,7 @@ import { v4 as uuidv4 } from "uuid";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 
 function ProfilePageLoader() {
+  // ... (loader component is unchanged)
   return (
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
       <div className="flex items-center gap-4">
@@ -92,12 +92,9 @@ export default function ProfilePage() {
     return <ProfilePageLoader />;
   }
   
-  const getRoleBadge = (role?: 'user' | 'admin' | 'gurudev', is_admin?: boolean) => {
-    if (role === 'gurudev') {
-      return <Badge variant="destructive">Gurudev</Badge>;
-    }
-    if (is_admin) {
-      return <Badge variant="secondary" className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Admin</Badge>;
+  const getRoleBadge = (verified?: boolean) => {
+    if (verified) {
+        return <Badge variant="secondary" className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Verified</Badge>;
     }
     return <Badge variant="outline">User</Badge>;
   };
@@ -121,18 +118,19 @@ export default function ProfilePage() {
           .from('attachments')
           .getPublicUrl(filePath);
 
-        // Add a timestamp to bypass browser cache
         newAvatarUrl = `${urlData.publicUrl}?t=${new Date().getTime()}`;
       }
-
+      
+      // We pass the is_private value from loggedInUser to ensure it doesn't get reset
       await updateUser({
           name,
           username,
           bio,
           avatar_url: newAvatarUrl,
+          is_private: loggedInUser.is_private 
       });
 
-      setAvatarFile(null); // Clear the file after successful upload
+      setAvatarFile(null);
       toast({
         title: "Profile Updated",
         description: "Your changes have been saved successfully.",
@@ -188,7 +186,16 @@ export default function ProfilePage() {
                   />
                   <AvatarFallback>{name.charAt(0)}</AvatarFallback>
                 </Avatar>
-                <h3 className="text-xl font-semibold">{name}</h3>
+                
+                {/* --- UPDATED: Added Lock Icon --- */}
+                <h3 className="text-xl font-semibold flex items-center gap-2">
+                  {name}
+                  {loggedInUser.is_private && (
+                    <LockKeyhole className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </h3>
+                {/* --- END UPDATE --- */}
+                
                 <p className="text-muted-foreground">@{username}</p>
                 <Button className="mt-4" onClick={() => avatarInputRef.current?.click()}>Change Avatar</Button>
               </CardContent>
@@ -229,14 +236,14 @@ export default function ProfilePage() {
                     <Input
                       id="email"
                       type="email"
-                      value={loggedInUser.email}
+                      value={loggedInUser.email || ''}
                       disabled
                     />
                   </div>
                   <div className="space-y-2 col-span-full">
                     <Label htmlFor="role">Role</Label>
                     <div className="w-min">
-                      {getRoleBadge(loggedInUser.role, loggedInUser.is_admin)}
+                      {getRoleBadge(loggedInUser.verified)}
                     </div>
                   </div>
                 </div>

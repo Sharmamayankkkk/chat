@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useAppContext } from "@/providers/app-provider";
 import { Badge } from '@/components/ui/badge';
-import { MessageSquare, UserX, Users, ArrowLeft, ShieldCheck, UserCheck, ShieldAlert } from 'lucide-react';
+import { MessageSquare, UserX, Users, ArrowLeft, ShieldCheck, UserCheck, ShieldAlert, LockKeyhole, EyeOff } from 'lucide-react'; // Added LockKeyhole, EyeOff
 import { createClient } from '@/lib/utils';
 import type { User, Chat } from '@/lib';
 import { useState, useEffect, useMemo } from 'react';
@@ -17,6 +17,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import { useToast } from '@/hooks/use-toast';
 
 function ProfilePageLoader() {
+  // ... (loader component is unchanged)
   return (
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
       <div className="flex items-center gap-4">
@@ -52,22 +53,19 @@ export default function UserProfilePage() {
   const router = useRouter();
   const { toast } = useToast();
   
-  // --- UPDATED: Destructuring from AppContext ---
-  // We are now using the new state and functions from the provider
   const {
     loggedInUser,
     isReady,
     chats,
     addChat,
-    relationships,      // NEW: Replaces dmRequests and blockedUsers
-    followUser,         // NEW: Replaces sendFollowRequest
-    approveFollow,      // NEW: Replaces approveFollowRequest
-    rejectFollow,       // NEW: For rejecting a request
-    unfollowUser,       // NEW: Replaces unfollowUser & cancelFollowRequest
+    relationships,
+    followUser,
+    approveFollow,
+    rejectFollow,
+    unfollowUser,
     blockUser,
     unblockUser,
   } = useAppContext();
-  // --- END OF UPDATES ---
 
   const [user, setUser] = useState<User | null>(null);
   const [mutualGroups, setMutualGroups] = useState<Chat[]>([]);
@@ -93,29 +91,37 @@ export default function UserProfilePage() {
         .single();
       
       if (userError || !userData) {
-        setIsLoading(false); // Make sure loader stops
+        setIsLoading(false);
         notFound();
         return;
       }
       setUser(userData as User);
 
-      // This logic for mutual groups is fine
-      const { data: participantData } = await supabase
-        .from('participants')
-        .select('chat_id')
-        .eq('user_id', loggedInUser.id);
-      
-      const userChatIds = participantData?.map(p => p.chat_id) || [];
-      
-      if (userChatIds.length > 0) {
-        const { data: mutualChatData } = await supabase
-          .from('chats')
-          .select('*, participants!inner(user_id)')
-          .in('id', userChatIds)
-          .eq('participants.user_id', userData.id)
-          .eq('type', 'group');
-          
-        setMutualGroups(mutualChatData as unknown as Chat[]);
+      // Only fetch mutual groups if the profile isn't private OR if we are following them
+      const isFollowing = relationships.some(r => 
+        r.user_one_id === loggedInUser.id && 
+        r.user_two_id === userData.id && 
+        r.status === 'approved'
+      );
+
+      if (!userData.is_private || isFollowing) {
+        const { data: participantData } = await supabase
+          .from('participants')
+          .select('chat_id')
+          .eq('user_id', loggedInUser.id);
+        
+        const userChatIds = participantData?.map(p => p.chat_id) || [];
+        
+        if (userChatIds.length > 0) {
+          const { data: mutualChatData } = await supabase
+            .from('chats')
+            .select('*, participants!inner(user_id)')
+            .in('id', userChatIds)
+            .eq('participants.user_id', userData.id)
+            .eq('type', 'group');
+            
+          setMutualGroups(mutualChatData as unknown as Chat[]);
+        }
       }
 
       setIsLoading(false);
@@ -123,79 +129,73 @@ export default function UserProfilePage() {
 
     fetchUserData();
 
-  }, [params.username, loggedInUser, isReady, router, supabase]);
+  }, [params.username, loggedInUser, isReady, router, supabase, relationships]);
 
 
-  // --- NEW: Logic to derive relationship statuses ---
-  // We use `useMemo` so this logic only re-runs when the data changes
-
-  // Check my relationship TO this user (am I following/blocking them?)
   const myRelationship = useMemo(() => {
     if (!relationships || !loggedInUser || !user) return null;
     return relationships.find(r => r.user_one_id === loggedInUser.id && r.user_two_id === user.id);
   }, [relationships, loggedInUser, user]);
 
-  // Check their relationship TO me (are they following me?)
   const theirRelationship = useMemo(() => {
     if (!relationships || !loggedInUser || !user) return null;
     return relationships.find(r => r.user_one_id === user.id && r.user_two_id === loggedInUser.id);
   }, [relationships, loggedInUser, user]);
 
-  // Derive simple boolean states from these relationships
   const isBlockedByMe = myRelationship?.status === 'blocked';
   const iAmBlocked = theirRelationship?.status === 'blocked';
   const isFollowing = myRelationship?.status === 'approved';
-  const isPending = myRelationship?.status === 'pending'; // I sent a request
-  const hasPendingRequestFrom_them = theirRelationship?.status === 'pending'; // They sent me a request
+  const isPending = myRelationship?.status === 'pending';
+  const hasPendingRequestFrom_them = theirRelationship?.status === 'pending';
   const isMutualFollow = isFollowing && theirRelationship?.status === 'approved';
-  
-  // --- END OF NEW LOGIC ---
 
+  // --- NEW: Check if we can view the content ---
+  const canViewProfileContent = useMemo(() => {
+    if (!user) return false;
+    if (user.is_private === false) return true; // Public profile
+    if (isFollowing) return true; // We are following them
+    return false;
+  }, [user, isFollowing]);
+  // --- END NEW ---
+
+
+  if (isLoading || !user || !loggedInUser) {
+    return <ProfilePageLoader />;
+  }
   
-  // This function is for the "Send Message" button
   const handleSendMessage = async () => {
+    // ... (this function is unchanged)
     if (!loggedInUser || !user) return;
-
-    // Check if a DM chat already exists in the context
     const existingChat = chats.find(c =>
       c.type === 'dm' &&
       c.participants?.length === 2 &&
       c.participants.some(p => p.user_id === loggedInUser.id) &&
       c.participants.some(p => p.user_id === user.id)
     );
-
     if (existingChat) {
       router.push(`/chat/${existingChat.id}`);
       return;
     }
-
-    // If not, create a new one
     try {
       const { data: chatData, error: chatError } = await supabase
         .from('chats')
         .insert({ type: 'dm', created_by: loggedInUser.id })
         .select()
         .single();
-      
       if (chatError) throw chatError;
       const newChatId = chatData.id;
-
       const participantData = [
         { chat_id: newChatId, user_id: loggedInUser.id },
         { chat_id: newChatId, user_id: user.id }
       ];
-      
       const { error: participantsError } = await supabase.from('participants').insert(participantData);
       if (participantsError) throw participantsError;
-
       const { data: newFullChat, error: newChatError } = await supabase
         .from('chats')
         .select(`*, participants:participants!chat_id(*, profiles!user_id(*))`)
         .eq('id', newChatId)
         .single();
-
       if (newChatError || !newFullChat) throw newChatError || new Error("Failed to fetch newly created chat.");
-
       addChat({ ...newFullChat, messages: [] } as unknown as Chat);
       router.push(`/chat/${newChatId}`);
     } catch (error: any) {
@@ -203,20 +203,9 @@ export default function UserProfilePage() {
        toast({ variant: 'destructive', title: "Error starting chat", description: error.message });
     }
   };
-
-
-  if (isLoading || !user || !loggedInUser) {
-    return <ProfilePageLoader />;
-  }
-
-  // --- NEW: Button rendering logic ---
+  
   const renderFollowButton = () => {
-    // We don't show follow buttons if a block is in place
-    if (isBlockedByMe || iAmBlocked) {
-      return null;
-    }
-
-    // Case 1: They sent me a follow request
+    if (isBlockedByMe || iAmBlocked) return null;
     if (hasPendingRequestFrom_them) {
       return (
         <>
@@ -225,35 +214,19 @@ export default function UserProfilePage() {
         </>
       );
     }
-
-    // Case 2: I am following them
     if (isFollowing) {
-      return (
-        <Button variant="outline" onClick={() => unfollowUser(user.id)}>
-          Following
-        </Button>
-      );
+      return <Button variant="outline" onClick={() => unfollowUser(user.id)}>Following</Button>;
     }
-
-    // Case 3: I sent them a request
     if (isPending) {
-      return (
-        <Button variant="outline" onClick={() => unfollowUser(user.id)}>
-          Requested
-        </Button>
-      );
+      return <Button variant="outline" onClick={() => unfollowUser(user.id)}>Requested</Button>;
     }
-
-    // Default Case: No relationship, I can follow them
-    return (
-      <Button onClick={() => followUser(user.id)}>
-        Follow
-      </Button>
-    );
+    return <Button onClick={() => followUser(user.id)}>Follow</Button>;
   };
-  // --- END OF NEW BUTTON LOGIC ---
 
   const getRoleBadge = () => {
+    if (user.verified) {
+        return <Badge variant="secondary" className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Verified</Badge>;
+    }
     return <Badge variant="outline">User</Badge>;
   };
 
@@ -278,29 +251,31 @@ export default function UserProfilePage() {
                   />
                   <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
                 </Avatar>
-                <h3 className="text-xl font-semibold">{user.name}</h3>
+                
+                {/* --- UPDATED: Added Lock Icon --- */}
+                <h3 className="text-xl font-semibold flex items-center gap-2">
+                  {user.name}
+                  {user.is_private && (
+                    <LockKeyhole className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </h3>
+                {/* --- END UPDATE --- */}
+                
                 <p className="text-muted-foreground">@{user.username}</p>
                 
                 <div className="mt-6 flex flex-col gap-2 w-full">
-                  
-                  {/* --- UPDATED: Button Section --- */}
-                  
-                  {/* NEW: Show "Send Message" only on mutual follow */}
                   {isMutualFollow && !isBlockedByMe && !iAmBlocked && (
                     <Button onClick={handleSendMessage}>
                       <MessageSquare className="mr-2 h-4 w-4" /> Send Message
                     </Button>
                   )}
                   
-                  {/* Render the new dynamic follow/pending/approve button(s) */}
                   {renderFollowButton()}
 
-                  {/* The Block button now uses the new `isBlockedByMe` state */}
-                  {!iAmBlocked && ( // Don't show block button if they blocked you
+                  {!iAmBlocked && (
                     <Button 
                       variant="outline" 
                       onClick={() => isBlockedByMe ? unblockUser(user.id) : blockUser(user.id)}
-                      // Don't allow blocking if you have a pending request from them
                       disabled={hasPendingRequestFrom_them}
                     >
                       {isBlockedByMe ? <UserCheck className="mr-2 h-4 w-4" /> : <UserX className="mr-2 h-4 w-4" />}
@@ -308,73 +283,86 @@ export default function UserProfilePage() {
                     </Button>
                   )}
                   
-                   {/* We'll re-enable this after updating ReportDialog */}
                    {/* <Button variant="destructive" onClick={() => setIsReportDialogOpen(true)}>
                     <ShieldAlert className="mr-2 h-4 w-4" /> Report User
                   </Button> */}
-
-                  {/* --- END OF UPDATED BUTTONS --- */}
-
                 </div>
               </CardContent>
             </Card>
           </div>
           <div className="md:col-span-2 space-y-8">
-            <Card>
-              <CardHeader>
-                <CardTitle>About {user.name}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                 <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground">Gender</p>
-                    <p className="text-foreground">
-                      {user.gender === "male"
-                        ? "Prabhuji (Male)"
-                        : user.gender === "female"
-                        ? "Mataji (Female)"
-                        : "Not specified"}
-                    </p>
-                  </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Bio</p>
-                  <p className="text-foreground italic">
-                    {user.bio || "This user hasn't written a bio yet."}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Role</p>
-                  <div>{getRoleBadge()}</div>
-                </div>
-              </CardContent>
-            </Card>
             
-            {mutualGroups.length > 0 && (
-               <Card>
+            {/* --- UPDATED: Privacy Lock for Profile Content --- */}
+            {canViewProfileContent ? (
+              <>
+                <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Users className="h-5 w-5 text-muted-foreground" />
-                      Shared Groups
-                    </CardTitle>
-                    <CardDescription>Groups you are both a member of.</CardDescription>
+                    <CardTitle>About {user.name}</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2">
-                    {mutualGroups.map(group => (
-                        <Link key={group.id} href={`/chat/${group.id}`} className="flex items-center justify-between p-3 rounded-lg hover:bg-accent transition-colors">
-                            <div className="flex items-center gap-3">
-                                <Avatar className="h-10 w-10">
-                                    <AvatarImage src={group.avatar_url} alt={group.name} data-ai-hint="group symbol" />
-                                    <AvatarFallback>{group.name?.charAt(0)}</AvatarFallback>
-                                </Avatar>
-                                <div>
-                                    <p className="font-semibold">{group.name}</p>
-                                    <p className="text-sm text-muted-foreground">{group.participants?.length} members</p>
-                                </div>
-                            </div>
-                        </Link>
-                    ))}
+                  <CardContent className="space-y-6">
+                    <div className="space-y-1">
+                        <p className="text-sm font-medium text-muted-foreground">Gender</p>
+                        <p className="text-foreground">
+                          {user.gender === "male"
+                            ? "Prabhuji (Male)"
+                            : user.gender === "female"
+                            ? "Mataji (Female)"
+                            : "Not specified"}
+                        </p>
+                      </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-muted-foreground">Bio</p>
+                      <p className="text-foreground italic">
+                        {user.bio || "This user hasn't written a bio yet."}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-muted-foreground">Role</p>
+                      <div>{getRoleBadge()}</div>
+                    </div>
                   </CardContent>
                 </Card>
+                
+                {mutualGroups.length > 0 && (
+                  <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Users className="h-5 w-5 text-muted-foreground" />
+                          Shared Groups
+                        </CardTitle>
+                        <CardDescription>Groups you are both a member of.</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        {mutualGroups.map(group => (
+                            <Link key={group.id} href={`/chat/${group.id}`} className="flex items-center justify-between p-3 rounded-lg hover:bg-accent transition-colors">
+                                <div className="flex items-center gap-3">
+                                    <Avatar className="h-10 w-10">
+                                        <AvatarImage src={group.avatar_url} alt={group.name} data-ai-hint="group symbol" />
+                                        <AvatarFallback>{group.name?.charAt(0)}</AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                        <p className="font-semibold">{group.name}</p>
+                                        <p className="text-sm text-muted-foreground">{group.participants?.length} members</p>
+                                    </div>
+                                </div>
+                            </Link>
+                        ))}
+                      </CardContent>
+                    </Card>
+                )}
+              </>
+            ) : (
+              <Card>
+                <CardContent className="p-10 flex flex-col items-center text-center">
+                  <EyeOff className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="font-semibold">This Profile is Private</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Follow this user to see their bio and shared groups.
+                  </p>
+                </CardContent>
+              </Card>
             )}
+            {/* --- END UPDATE --- */}
 
           </div>
         </div>

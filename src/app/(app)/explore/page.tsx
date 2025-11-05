@@ -11,6 +11,8 @@ import { Search } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { User } from '@/lib';
 import { Card } from '@/components/ui/card';
+import { StatusRail } from './components/status-rail'; // <-- IMPORT THE NEW COMPONENT
+import { Separator } from '@/components/ui/separator';
 
 export default function ExplorePage() {
   const { loggedInUser, allUsers, isReady } = useAppContext();
@@ -50,8 +52,14 @@ export default function ExplorePage() {
         </div>
       </header>
       <ScrollArea className="flex-1">
-        <main className="p-4 md:p-8">
-          <div className="mb-6">
+        <main className="p-4 md:p-8 space-y-6">
+          
+          {/* --- ADD THIS SECTION --- */}
+          <StatusRail />
+          <Separator />
+          {/* --- END OF SECTION --- */}
+
+          <div>
             <h3 className="text-2xl font-semibold tracking-tight mb-4">Discover Devotees</h3>
             {/* This is where we'll put the "Posts" feed later */}
           </div>
