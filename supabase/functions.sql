@@ -314,11 +314,6 @@ $$;
 -- Last Updated: 2025-11-03
 -- ============================================================================
 
-
--------------------------------------------------------------------------------
--------------------------------------------------------------------------------
--- ============================================================================
--- ========================== Novemver 5th ====================================
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -332,5 +327,124 @@ BEGIN
         FALSE -- All new users are NOT verified by default
     );
     RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+-- ============================================================================
+--            SOCIAL MEDIA MIGRATION FUNCTIONS (Step 1)
+-- ============================================================================
+-- Description: This script adds functions to manage the new 'relationships'
+--              table for follows, blocks, and approvals.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- FUNCTION: request_follow
+-- Purpose: A user (auth.uid()) requests to follow a target_user_id.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.request_follow(target_user_id UUID)
+RETURNS json AS $$
+DECLARE
+    target_is_private BOOLEAN;
+    new_status public.relationship_status;
+    new_relationship RECORD;
+BEGIN
+    -- Check if target account is private
+    SELECT is_private INTO target_is_private FROM public.profiles WHERE id = target_user_id;
+
+    -- Set status based on privacy
+    IF target_is_private THEN
+        new_status := 'pending';
+    ELSE
+        new_status := 'approved';
+    END IF;
+
+    -- Insert the new relationship
+    INSERT INTO public.relationships (user_one_id, user_two_id, status)
+    VALUES (auth.uid(), target_user_id, new_status)
+    ON CONFLICT (user_one_id, user_two_id) DO NOTHING
+    RETURNING * INTO new_relationship;
+
+    RETURN json_build_object(
+        'status', new_status,
+        'relationship', row_to_json(new_relationship)
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ----------------------------------------------------------------------------
+-- FUNCTION: approve_follow
+-- Purpose: A user (auth.uid()) approves a follow request from a requestor_user_id.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.approve_follow(requestor_user_id UUID)
+RETURNS void AS $$
+BEGIN
+    UPDATE public.relationships
+    SET status = 'approved'
+    WHERE user_one_id = requestor_user_id
+      AND user_two_id = auth.uid()
+      AND status = 'pending';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ----------------------------------------------------------------------------
+-- FUNCTION: unfollow_user
+-- Purpose: A user (auth.uid()) unfollows a target_user_id.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.unfollow_user(target_user_id UUID)
+RETURNS void AS $$
+BEGIN
+    DELETE FROM public.relationships
+    WHERE user_one_id = auth.uid()
+      AND user_two_id = target_user_id
+      AND status IN ('approved', 'pending'); -- Can cancel a pending request too
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ----------------------------------------------------------------------------
+-- FUNCTION: remove_follower
+-- Purpose: A user (auth.uid()) removes a follower (target_user_id).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.remove_follower(target_user_id UUID)
+RETURNS void AS $$
+BEGIN
+    DELETE FROM public.relationships
+    WHERE user_one_id = target_user_id
+      AND user_two_id = auth.uid()
+      AND status = 'approved';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ----------------------------------------------------------------------------
+-- FUNCTION: block_user (Replaces old block logic)
+-- Purpose: A user (auth.uid()) blocks a target_user_id.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.block_user(target_user_id UUID)
+RETURNS void AS $$
+BEGIN
+    -- This creates or updates a relationship to be 'blocked'
+    INSERT INTO public.relationships (user_one_id, user_two_id, status)
+    VALUES (auth.uid(), target_user_id, 'blocked')
+    ON CONFLICT (user_one_id, user_two_id)
+    DO UPDATE SET status = 'blocked';
+
+    -- Delete any existing follow from the blocked user
+    DELETE FROM public.relationships
+    WHERE user_one_id = target_user_id
+      AND user_two_id = auth.uid();
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ----------------------------------------------------------------------------
+-- FUNCTION: unblock_user (Replaces old unblock logic)
+-- Purpose: A user (auth.uid()) unblocks a target_user_id.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.unblock_user(target_user_id UUID)
+RETURNS void AS $$
+BEGIN
+    DELETE FROM public.relationships
+    WHERE user_one_id = auth.uid()
+      AND user_two_id = target_user_id
+      AND status = 'blocked';
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
