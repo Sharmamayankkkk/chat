@@ -1,8 +1,9 @@
 "use client"
 
 import { createContext, useContext, useState, type ReactNode, useEffect, useCallback, useRef } from "react"
-// We've removed DmRequest and updated the types import
-import type { User, Chat, ThemeSettings, Message, AppContextType, Relationship, Notification } from "@/lib" 
+import type { 
+  User, Chat, ThemeSettings, Message, AppContextType, Relationship, Notification, Post, Comment, Media, Poll 
+} from "@/lib" 
 import { createClient } from "@/lib/utils"
 import { Icons } from "@/components/icons"
 import { useToast } from "@/hooks/use-toast"
@@ -18,6 +19,30 @@ const sortChats = (chatArray: Chat[]) => {
     return dateB.getTime() - dateA.getTime()
   })
 }
+
+// --- UPDATED: This query is now specific to avoid ambiguity ---
+const POST_QUERY = `
+  id,
+  user_id,
+  content,
+  media_urls,
+  poll,
+  quote_of_id,
+  created_at,
+  author:user_id (*),
+  quote_of:quote_of_id (*, author:user_id (*)),
+  comments (
+    *,
+    author:user_id (*),
+    likes:comment_likes (user_id),
+    replies:comments!parent_comment_id (
+      *,
+      author:user_id (*),
+      likes:comment_likes (user_id)
+    )
+  ),
+  likes:post_likes (user_id)
+`
 
 function AppLoading() {
   return (
@@ -36,12 +61,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [allUsers, setAllUsers] = useState<User[]>([])
   const [chats, setChats] = useState<Chat[]>([])
   const [isReady, setIsReady] = useState(false)
-  
-  // --- STATE CHANGES ---
-  // Removed dmRequests and blockedUsers state
   const [relationships, setRelationships] = useState<Relationship[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  // --- END OF STATE CHANGES ---
+  const [posts, setPosts] = useState<Post[]>([]);
 
   const [themeSettings, setThemeSettingsState] = useState<ThemeSettings>({
     outgoingBubbleColor: "hsl(221.2 83.2% 53.3%)",
@@ -63,7 +85,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [])
   
-  // --- RESET STATE UPDATED ---
   const resetState = useCallback(() => {
     setSession(null);
     setLoggedInUser(null)
@@ -71,12 +92,58 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAllUsers([])
     setRelationships([])
     setNotifications([])
+    setPosts([])
     subscriptionsRef.current.forEach(sub => sub.unsubscribe())
     subscriptionsRef.current = []
   }, [])
-  // --- END OF RESET STATE ---
 
-  // --- FETCH INITIAL DATA UPDATED ---
+  // --- HELPER: Format posts from DB data ---
+  const formatPost = (post: any): Post => {
+    // This function ensures the data from DB matches our Post type
+    return {
+      ...post,
+      media_urls: post.media_urls || [],
+      likes: (post.likes || []).map((l: any) => l.user_id),
+      stats: {
+        comments: (post.comments || []).reduce((acc: number, c: any) => acc + 1 + (c.replies?.length || 0), 0),
+        likes: (post.likes || []).length,
+        reposts: 0, // Placeholder
+        quotes: 0,  // Placeholder
+        views: 0,   // Placeholder
+        bookmarks: 0 // Placeholder
+      },
+      comments: (post.comments || []).map((comment: any) => ({
+        ...comment,
+        author: comment.author, // Use 'author' key from query
+        likes: (comment.likes || []).length,
+        likedBy: (comment.likes || []).map((l: any) => l.user_id),
+        replies: (comment.replies || []).map((reply: any) => ({
+          ...reply,
+          author: reply.author, // Use 'author' key from query
+          likes: (reply.likes || []).length,
+          likedBy: (reply.likes || []).map((l: any) => l.user_id),
+        }))
+      })).sort((a: Comment, b: Comment) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+      author: post.author, // Use 'author' key from query
+      quote_of: post.quote_of_id ? { ...post.quote_of, author: post.quote_of.author } : undefined
+    }
+  }
+
+  // --- NEW: Fetch Posts Function ---
+  const fetchPosts = useCallback(async () => {
+    const { data, error } = await supabaseRef.current
+      .from('posts')
+      .select(POST_QUERY)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) {
+      toast({ variant: 'destructive', title: 'Error fetching posts', description: error.message });
+    } else {
+      setPosts(data.map(formatPost));
+    }
+  }, [toast]);
+
   const fetchInitialData = useCallback(async (user: AuthUser) => {
     try {
         const { data: profile, error: profileError } = await supabaseRef.current
@@ -104,22 +171,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         setLoggedInUser(fullUserProfile);
 
-        // Updated Promise.all to fetch relationships and notifications
         const [
             { data: allUsersData },
             { data: relationshipsData },
             { data: participantRecords },
-            { data: notificationsData }
+            { data: notificationsData },
+            { data: postsData }
         ] = await Promise.all([
             supabaseRef.current.from("profiles").select("*"),
             supabaseRef.current.from("relationships").select("*").or(`user_one_id.eq.${user.id},user_two_id.eq.${user.id}`),
             supabaseRef.current.from('participants').select('chat_id').eq('user_id', user.id),
-            supabaseRef.current.from("notifications").select("*, actor:actor_id(*)").eq("user_id", user.id).order("created_at", { ascending: false })
+            supabaseRef.current.from("notifications").select("*, actor:actor_id(*)").eq("user_id", user.id).order("created_at", { ascending: false }),
+            supabaseRef.current.from('posts').select(POST_QUERY).order('created_at', { ascending: false }).limit(50)
         ]);
         
         setAllUsers((allUsersData as User[]) || []);
         setRelationships((relationshipsData as Relationship[]) || []);
         setNotifications((notificationsData as Notification[]) || []);
+        setPosts((postsData?.map(formatPost) as Post[]) || []);
         
         const chatIds = participantRecords?.map(p => p.chat_id) || [];
         if (chatIds.length > 0) {
@@ -154,8 +223,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
         await supabaseRef.current.auth.signOut();
     }
-  }, [toast, requestNotificationPermission]);
-  // --- END OF FETCH INITIAL DATA ---
+  }, [toast, requestNotificationPermission, fetchPosts]);
   
   useEffect(() => {
     const initializeApp = async () => {
@@ -188,26 +256,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscriptionsRef.current.forEach((sub) => sub.unsubscribe());
       subscriptionsRef.current = [];
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // We removed fetchInitialData, resetState, router from deps
+  }, [fetchInitialData, resetState, router]);
 
 
   const handleNewMessage = useCallback(
     async (payload: RealtimePostgresChangesPayload<Message>) => {
       if (!loggedInUser) return;
-
       const newMessage = payload.new as Message;
+      // ... (rest of function is unchanged)
       const isMyMessage = newMessage.user_id === loggedInUser.id;
       const currentChatId = pathname.split("/chat/")[1];
       const isChatOpen = String(newMessage.chat_id) === currentChatId;
       const isWindowFocused = document.hasFocus();
-
       setChats((currentChats) => {
         const newChats = currentChats.map((c) => {
           if (c.id === newMessage.chat_id) {
             const shouldIncreaseUnread = !isMyMessage && (!isChatOpen || !isWindowFocused);
             const newUnreadCount = shouldIncreaseUnread ? (c.unreadCount || 0) + 1 : (c.unreadCount || 0);
-
             return {
               ...c,
               last_message_content: newMessage.attachment_url ? newMessage.attachment_metadata?.name || "Sent an attachment" : newMessage.content,
@@ -219,9 +284,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
         return sortChats(newChats);
       });
-
       const shouldShowNotification = !isMyMessage && Notification.permission === "granted" && (!isChatOpen || !isWindowFocused);
-
       if (shouldShowNotification) {
         const sender = allUsers.find((u) => u.id === newMessage.user_id);
         if (sender) {
@@ -253,20 +316,91 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const newNotificationPayload = payload.new as Notification;
       const actorProfile = allUsers.find(u => u.id === newNotificationPayload.actor_id);
       if (!actorProfile) return;
-
-      const newNotification = {
-        ...newNotificationPayload,
-        actor: actorProfile
-      } as Notification;
-
+      const newNotification = { ...newNotificationPayload, actor: actorProfile } as Notification;
       setNotifications(current => [newNotification, ...current]);
       
+      let title = 'New Notification';
+      let body = 'You have a new update.';
+
       if (newNotification.type === 'follow_request') {
-        toast({
-          title: "New Follow Request",
-          description: `${actorProfile.name} (@${actorProfile.username}) wants to follow you.`,
-        });
+        title = "New Follow Request";
+        body = `${actorProfile.name} (@${actorProfile.username}) wants to follow you.`;
+      } else if (newNotification.type === 'new_follower') {
+         title = "New Follower";
+         body = `${actorProfile.name} (@${actorProfile.username}) started following you.`;
+      } else if (newNotification.type === 'new_like') {
+         title = "New Like";
+         body = `${actorProfile.name} liked your post.`;
+      } else if (newNotification.type === 'new_comment') {
+         title = "New Comment";
+         body = `${actorProfile.name} commented on your post.`;
       }
+      
+      toast({ title, description: body });
+    };
+
+    const handleNewPost = async (payload: RealtimePostgresChangesPayload<Post>) => {
+      const { data, error } = await supabaseRef.current
+        .from('posts')
+        .select(POST_QUERY)
+        .eq('id', (payload.new as Post).id)
+        .single();
+      if (error || !data) return;
+      setPosts(current => [formatPost(data), ...current]);
+    };
+
+    const handlePostUpdate = async (payload: RealtimePostgresChangesPayload<Post>) => {
+      const { data, error } = await supabaseRef.current
+        .from('posts')
+        .select(POST_QUERY)
+        .eq('id', (payload.new as Post).id)
+        .single();
+      if (error || !data) return;
+      const updatedPost = formatPost(data);
+      setPosts(current => current.map(p => p.id === updatedPost.id ? updatedPost : p));
+    };
+    
+    const handlePostDelete = (payload: RealtimePostgresChangesPayload<Post>) => {
+      const oldPost = payload.old as Partial<Post>;
+      if (oldPost.id) {
+        setPosts(current => current.filter(p => p.id !== oldPost.id));
+      }
+    };
+
+    const handleNewLike = (payload: RealtimePostgresChangesPayload<{post_id: number, user_id: string}>) => {
+      const newLike = payload.new as {post_id: number, user_id: string};
+      setPosts(current => current.map(p => {
+        if (p.id === newLike.post_id) {
+          const newLikes = [...p.likes, newLike.user_id];
+          return { ...p, likes: newLikes, stats: { ...p.stats, likes: newLikes.length } };
+        }
+        return p;
+      }));
+    };
+    
+    const handleRemovedLike = (payload: RealtimePostgresChangesPayload<{post_id: number, user_id: string}>) => {
+      const oldLike = payload.old as {post_id: number, user_id: string};
+      setPosts(current => current.map(p => {
+        if (p.id === oldLike.post_id) {
+          const newLikes = p.likes.filter(id => id !== oldLike.user_id);
+          return { ...p, likes: newLikes, stats: { ...p.stats, likes: newLikes.length } };
+        }
+        return p;
+      }));
+    };
+    
+    const handleCommentChange = async (payload: RealtimePostgresChangesPayload<Comment>) => {
+       const postId = (payload.new as Comment)?.post_id || (payload.old as Partial<Comment>)?.post_id;
+       if (!postId) return;
+       
+       const { data, error } = await supabaseRef.current
+        .from('posts')
+        .select(POST_QUERY)
+        .eq('id', postId)
+        .single();
+      if (error || !data) return;
+      const updatedPost = formatPost(data);
+      setPosts(current => current.map(p => p.id === updatedPost.id ? updatedPost : p));
     };
 
     const channels = [
@@ -292,7 +426,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       supabaseRef.current.channel('public:chats')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chats' }, payload => {
             setChats(current => current.map(c => c.id === payload.new.id ? {...c, ...payload.new} : c))
-        })
+        }),
+      
+      supabaseRef.current.channel('public-posts')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, handleNewPost)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'posts' }, handlePostUpdate)
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'posts' }, handlePostDelete),
+        
+      supabaseRef.current.channel('public-post-likes')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'post_likes' }, handleNewLike)
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'post_likes' }, handleRemovedLike),
+        
+      supabaseRef.current.channel('public-comments')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, handleCommentChange)
     ];
     
     channels.forEach(c => c.subscribe());
@@ -300,7 +446,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   }, [loggedInUser, session, handleNewMessage, fetchInitialData, router, allUsers, toast]);
   // --- END OF REALTIME SUBSCRIPTIONS ---
-
   
   const setThemeSettings = useCallback(async (newSettings: Partial<ThemeSettings>) => {
     if (!loggedInUser) return;
@@ -325,7 +470,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         username: updates.username, 
         bio: updates.bio, 
         avatar_url: updates.avatar_url,
-        is_private: updates.is_private // This is the fix
+        is_private: updates.is_private 
       }).eq("id", loggedInUser.id)
       
       if (error) {
@@ -357,8 +502,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [toast])
 
-
-  // --- NEW SOCIAL/RELATIONSHIP FUNCTIONS ---
   const followUser = useCallback(async (targetId: string) => {
     if (!loggedInUser) return;
     const { data, error } = await supabaseRef.current.rpc('request_follow', { target_user_id: targetId });
@@ -430,9 +573,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast({ title: "User Unblocked" });
     }
   }, [loggedInUser, toast]);
-  // --- END OF NEW FUNCTIONS ---
 
-  // --- NEW: Mark Notifications as Read function ---
   const markNotificationsAsRead = useCallback(async () => {
     if (!loggedInUser) return;
     
@@ -446,15 +587,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast({ variant: "destructive", title: "Error", description: "Could not mark notifications as read." });
       if (session) await fetchInitialData(session.user);
     }
-  }, [loggedInUser, session, fetchInitialData]); // Added fetchInitialData
-  // --- END ---
+  }, [loggedInUser, session, fetchInitialData]);
 
   const forwardMessage = useCallback(async (message: Message, chatIds: number[]) => {
     if (!loggedInUser) return
-
     const originalSender = allUsers.find(u => u.id === message.user_id)?.name || 'Unknown User';
     const forwardContent = `Forwarded from **${originalSender}**\n${message.content || ''}`;
-
     const forwardPromises = chatIds.map(chatId => {
       return supabaseRef.current.from('messages').insert({
         chat_id: chatId,
@@ -464,7 +602,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         attachment_metadata: message.attachment_metadata,
       });
     });
-
     try {
       const results = await Promise.all(forwardPromises);
       const failed = results.filter(r => r.error);
@@ -482,15 +619,118 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setChats(current => current.map(c => (c.id === chatId && c.unreadCount ? { ...c, unreadCount: 0 } : c)))
   }, []);
 
+  // --- NEW POST FUNCTIONS ---
+  const createPost = useCallback(async (content: string, media?: Media[], poll?: Poll) => {
+    if (!loggedInUser) return;
+    
+    const optimisticId = `temp-${Date.now()}`;
+    const optimisticPost: Post = {
+      id: optimisticId,
+      user_id: loggedInUser.id,
+      content: content || null,
+      media_urls: media || null,
+      poll: poll || null,
+      quote_of_id: null,
+      created_at: new Date().toISOString(),
+      author: loggedInUser,
+      comments: [],
+      likes: [],
+      stats: { comments: 0, likes: 0, reposts: 0, quotes: 0, views: 0, bookmarks: 0 },
+    };
+    
+    setPosts(current => [optimisticPost, ...current]);
+    
+    const { data, error } = await supabaseRef.current.from('posts').insert({
+      user_id: loggedInUser.id,
+      content: content || null,
+      media_urls: media || null,
+      poll: poll || null
+    }).select(POST_QUERY).single();
+    
+    if (error) {
+      toast({ variant: 'destructive', title: 'Error creating post', description: error.message });
+      setPosts(current => current.filter(p => p.id !== optimisticId));
+    } else {
+      setPosts(current => current.map(p => p.id === optimisticId ? formatPost(data) : p));
+      toast({ title: 'Post created!' });
+    }
+  }, [loggedInUser, toast]);
+
+  const deletePost = useCallback(async (postId: number | string) => {
+    if (typeof postId === 'string') return;
+    
+    const originalPosts = posts;
+    setPosts(current => current.filter(p => p.id !== postId));
+    
+    const { error } = await supabaseRef.current.from('posts').delete().eq('id', postId);
+    
+    if (error) {
+      toast({ variant: 'destructive', title: 'Error deleting post', description: error.message });
+      setPosts(originalPosts);
+    } else {
+      toast({ title: 'Post deleted' });
+    }
+  }, [posts, toast]);
+
+  const togglePostLike = useCallback(async (postId: number | string) => {
+    if (!loggedInUser || typeof postId === 'string') return;
+    
+    setPosts(current => current.map(p => {
+      if (p.id === postId) {
+        const isLiked = p.likes.includes(loggedInUser.id);
+        const newLikes = isLiked
+          ? p.likes.filter(id => id !== loggedInUser.id)
+          : [...p.likes, loggedInUser.id];
+        return { ...p, likes: newLikes, stats: { ...p.stats, likes: newLikes.length } };
+      }
+      return p;
+    }));
+    
+    const { error } = await supabaseRef.current.rpc('toggle_post_like', { p_post_id: postId });
+    
+    if (error) {
+      toast({ variant: 'destructive', title: 'Error', description: error.message });
+      fetchPosts();
+    }
+  }, [loggedInUser, toast, fetchPosts]);
+
+  const createComment = useCallback(async (postId: number | string, content: string, parentCommentId?: number | string) => {
+    if (!loggedInUser || typeof postId === 'string') return;
+    
+    const { error } = await supabaseRef.current.from('comments').insert({
+      user_id: loggedInUser.id,
+      post_id: postId as number,
+      content,
+      parent_comment_id: parentCommentId as number
+    }).select().single();
+    
+    if (error) {
+      toast({ variant: 'destructive', title: 'Error posting comment', description: error.message });
+    } else {
+      toast({ title: 'Comment posted!' });
+    }
+  }, [loggedInUser, toast]);
+
+  const toggleCommentLike = useCallback(async (commentId: number | string) => {
+    if (!loggedInUser || typeof commentId === 'string') return;
+    
+    const { error } = await supabaseRef.current.rpc('toggle_comment_like', { p_comment_id: commentId as number });
+    
+    if (error) {
+      toast({ variant: 'destructive', title: 'Error', description: error.message });
+    }
+  }, [loggedInUser, toast]);
+  // --- END NEW POST FUNCTIONS ---
+
   if (!isReady) {
     return <AppLoading />
   }
 
-  // --- CONTEXT VALUE UPDATED ---
   const value = {
     loggedInUser, allUsers, chats, 
     relationships, 
-    notifications, // <-- ADDED
+    notifications,
+    posts,
     addChat, updateUser, leaveGroup, deleteGroup,
     forwardMessage,
     themeSettings, setThemeSettings, isReady, resetUnreadCount,
@@ -502,9 +742,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     removeFollower,
     blockUser,
     unblockUser,
-    markNotificationsAsRead, // <-- ADDED
+    markNotificationsAsRead,
+    
+    fetchPosts,
+    createPost,
+    deletePost,
+    togglePostLike,
+    createComment,
+    toggleCommentLike,
   }
-  // --- END OF CONTEXT VALUE ---
 
   return <AppContext.Provider value={value as any}>{children}</AppContext.Provider>
 }

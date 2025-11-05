@@ -1,5 +1,4 @@
 // Central export point for all types
-// This maintains backward compatibility with existing imports
 
 // Auth types
 export type { User } from './auth';
@@ -20,7 +19,7 @@ export type {
   Event
 } from './events';
 
-// App types (NOW EXPORTING THE NEW TYPES)
+// App types
 export type {
   ThemeSettings,
   AppContextType,
@@ -29,3 +28,12 @@ export type {
   Notification,
   NotificationType
 } from './app';
+
+// Post types
+export type {
+  Post,
+  Comment,
+  Media,
+  Poll,
+  PollOption
+} from './posts';
