@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import React from 'react';
-import { EditGroupDialog } from './edit-group-dialog';
+import { EditGroupDialog } from './components/edit-group-dialog';
 import type { Chat } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SidebarTrigger } from '@/components/ui/sidebar';
@@ -25,7 +25,7 @@ export default function GroupInfoPage() {
   const { chats, loggedInUser, leaveGroup, deleteGroup, isReady } = useAppContext();
   const { toast } = useToast();
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
-  
+
   const group = chats.find(c => c.id === Number(params.id) && (c.type === 'group' || c.type === 'channel'));
 
   if (!isReady) {
@@ -49,14 +49,8 @@ export default function GroupInfoPage() {
   }
 
   const isAdmin = group.participants.find(p => p.user_id === loggedInUser?.id)?.is_admin;
-  
-  const displayedParticipants = group.participants.filter(p => {
-    // Hide Gurudev from non-admins
-    if (p.profiles.role === 'gurudev' && !loggedInUser?.is_admin) {
-      return false;
-    }
-    return true; // Show everyone else
-  });
+
+  const displayedParticipants = group.participants;
 
   const handleLeaveGroup = () => {
     leaveGroup(group.id);
@@ -71,7 +65,7 @@ export default function GroupInfoPage() {
   };
 
   const copyInviteLink = () => {
-    if(group.invite_code) {
+    if (group.invite_code) {
       const link = `${window.location.origin}/join/${group.invite_code}`;
       navigator.clipboard.writeText(link);
       toast({ title: "Invite link copied!" });
@@ -103,12 +97,12 @@ export default function GroupInfoPage() {
                 <p className="text-muted-foreground flex items-center gap-2 mt-1">
                   <Users className="h-4 w-4" /> {group.participants?.length} members
                 </p>
-                
+
                 <div className="mt-6 flex flex-col gap-2 w-full">
                   <Button onClick={() => router.push(`/chat/${group.id}`)}>
                     <MessageSquare className="mr-2 h-4 w-4" /> Go to Chat
                   </Button>
-                  
+
                   {isAdmin && (
                     <Button variant="outline" onClick={() => setIsEditDialogOpen(true)}>
                       <Settings className="mr-2 h-4 w-4" /> Edit Group
@@ -205,24 +199,23 @@ export default function GroupInfoPage() {
                 <CardDescription>People in this {group.type}.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                  {displayedParticipants.map(participant => (
-                      <div key={participant.user_id} className="flex items-center justify-between">
-                          <Link href={`/profile/${participant.profiles.username}`} className="flex items-center gap-3 group">
-                              <Avatar className="h-10 w-10">
-                                  <AvatarImage src={participant.profiles.avatar_url} alt={participant.profiles.name} data-ai-hint="avatar" />
-                                  <AvatarFallback>{participant.profiles.name.charAt(0)}</AvatarFallback>
-                              </Avatar>
-                              <div>
-                                  <p className="font-semibold group-hover:underline">{participant.profiles.name}</p>
-                                  <p className="text-sm text-muted-foreground">@{participant.profiles.username}</p>
-                              </div>
-                          </Link>
-                          <div className="flex items-center gap-2">
-                            {participant.profiles.role === 'gurudev' && <Badge variant="destructive">Gurudev</Badge>}
-                            {participant.is_admin && participant.profiles.role !== 'gurudev' && <Badge variant="secondary" className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" />Admin</Badge>}
-                          </div>
+                {displayedParticipants.map(participant => (
+                  <div key={participant.user_id} className="flex items-center justify-between">
+                    <Link href={`/profile/${participant.profiles.username}`} className="flex items-center gap-3 group">
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage src={participant.profiles.avatar_url} alt={participant.profiles.name} data-ai-hint="avatar" />
+                        <AvatarFallback>{participant.profiles.name.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="font-semibold group-hover:underline">{participant.profiles.name}</p>
+                        <p className="text-sm text-muted-foreground">@{participant.profiles.username}</p>
                       </div>
-                  ))}
+                    </Link>
+                    <div className="flex items-center gap-2">
+                      {participant.is_admin && <Badge variant="secondary" className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" />Admin</Badge>}
+                    </div>
+                  </div>
+                ))}
               </CardContent>
             </Card>
           </div>

@@ -30,7 +30,7 @@ import {
 import { MoreHorizontal, ShieldCheck } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { createClient } from '@/lib/utils';
-import type { User } from '@/lib/types';
+import { User } from '@/lib/types/auth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAppContext } from '@/providers/app-provider';

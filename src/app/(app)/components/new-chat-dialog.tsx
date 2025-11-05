@@ -129,13 +129,7 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
   const filteredUsers = React.useMemo(() => {
     if (!loggedInUser) return [];
 
-    const usersToShow = allUsers.filter(user => {
-      // Hide Gurudev from non-admins
-      if (user.role === 'gurudev' && !loggedInUser.is_admin) {
-        return false;
-      }
-      return true;
-    });
+    const usersToShow = allUsers;
 
     if (!searchQuery) return usersToShow;
 

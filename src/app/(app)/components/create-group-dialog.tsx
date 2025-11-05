@@ -110,7 +110,7 @@ export function CreateGroupDialog({ open, onOpenChange }: CreateGroupDialogProps
         const participantData = allMemberIds.map(userId => {
           const user = allUsers.find(u => u.id === userId);
           // Creator and Gurudev are admins by default
-          const isAdmin = userId === loggedInUser.id || user?.role === 'gurudev';
+          const isAdmin = userId === loggedInUser.id;
           return {
             chat_id: newChatId,
             user_id: userId,

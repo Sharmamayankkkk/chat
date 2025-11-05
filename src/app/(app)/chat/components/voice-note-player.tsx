@@ -5,7 +5,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Play, Pause } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { AttachmentMetadata } from '@/lib/types';
+import type { AttachmentMetadata } from '@/lib/';
 
 // Helper to format time from seconds to a "m:ss" string.
 const formatTime = (timeInSeconds: number) => {

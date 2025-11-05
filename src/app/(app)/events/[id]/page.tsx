@@ -104,7 +104,7 @@ export default function EventDetailsPage() {
     const isPastEvent = new Date(event.date_time) < new Date();
     const isCancelled = event.status === 'cancelled';
     const userRsvp = event.rsvps?.find(rsvp => rsvp.user_id === loggedInUser?.id);
-    const isAdmin = loggedInUser?.is_admin || loggedInUser?.id === event.creator_id;
+    const isAdmin = loggedInUser?.id === event.creator_id;
     
     const handleRsvp = async (status: RSVPStatus) => {
         if (!loggedInUser) return;

@@ -13,7 +13,7 @@ import { createClient } from '@/lib/utils';
 import type { User, Chat } from '@/lib/types';
 import { useState, useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ReportDialog } from '../../components/report-dialog';
+import { ReportDialog } from '../components/report-dialog';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 
 function ProfilePageLoader() {
@@ -161,20 +161,14 @@ export default function UserProfilePage() {
        alert(`Error creating chat: ${error.message}`);
     }
   };
-  
-  const getRoleBadge = (role?: 'user' | 'admin' | 'gurudev', is_admin?: boolean) => {
-    if (role === 'gurudev') {
-      return <Badge variant="destructive">Gurudev</Badge>;
-    }
-    if (is_admin) {
-      return <Badge variant="secondary" className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Admin</Badge>;
-    }
+
+  const getRoleBadge = () => {
     return <Badge variant="outline">User</Badge>;
   };
-  
-  const isBlocked = blockedUsers.includes(user.id);
-  const canSendMessage = (loggedInUser.is_admin || user.role !== 'gurudev') && !isBlocked;
 
+  const isBlocked = blockedUsers.includes(user.id);
+  const canSendMessage = !isBlocked;
+  
   return (
     <div className="flex h-full flex-col">
       <ReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} userToReport={user} />
@@ -237,7 +231,7 @@ export default function UserProfilePage() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Role</p>
-                  <div>{getRoleBadge(user.role, user.is_admin)}</div>
+                  <div>{getRoleBadge()}</div>
                 </div>
               </CardContent>
             </Card>

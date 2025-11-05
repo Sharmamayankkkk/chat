@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useAppContext } from '@/providers/app-provider'
-import type { User, Message } from '@/lib/types'
+import type { User, Message } from '@/lib/'
 import { Loader2 } from 'lucide-react'
 
 interface ReportDialogProps {

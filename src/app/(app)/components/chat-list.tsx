@@ -16,7 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import type { Chat } from '@/lib/types';
+import type { Chat } from '@/lib/';
 import { useAppContext } from '@/providers/app-provider';
 import { CreateGroupDialog } from './create-group-dialog';
 import { NewChatDialog } from './new-chat-dialog';
@@ -95,7 +95,6 @@ export function ChatList({ chats }: ChatListProps) {
               </TooltipTrigger>
               <TooltipContent side="right">New Chat</TooltipContent>
             </Tooltip>
-          {loggedInUser?.is_admin && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className="flex-shrink-0" onClick={() => setIsCreateGroupOpen(true)}>
@@ -105,7 +104,6 @@ export function ChatList({ chats }: ChatListProps) {
               </TooltipTrigger>
               <TooltipContent side="right">Create Group</TooltipContent>
             </Tooltip>
-          )}
         </TooltipProvider>
       </div>
       <ScrollArea className="flex-1 -mx-2">

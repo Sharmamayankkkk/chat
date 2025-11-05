@@ -12,7 +12,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Pin, X } from 'lucide-react';
-import type { Message } from '@/lib/types';
+import type { Message } from '@/lib/';
 import { formatDistanceToNow } from 'date-fns';
 
 interface PinnedMessagesDialogProps {

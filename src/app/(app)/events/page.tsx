@@ -90,17 +90,15 @@ export default function EventsPage() {
 
     return (
         <div className="flex h-full flex-col">
-            {loggedInUser?.is_admin && <CreateEventDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} onEventCreated={fetchEvents} onEventUpdated={fetchEvents} />}
+            <CreateEventDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} onEventCreated={fetchEvents} onEventUpdated={fetchEvents} />
             <header className="flex items-center gap-4 p-4 border-b bg-background sticky top-0 z-10">
                 <SidebarTrigger className="md:hidden" />
                 <h2 className="text-xl font-bold tracking-tight">Events</h2>
                 <div className="ml-auto">
-                    {loggedInUser?.is_admin && (
                         <Button onClick={() => setIsCreateOpen(true)}>
                             <PlusCircle className="mr-2 h-4 w-4" />
                             Create Event
                         </Button>
-                    )}
                 </div>
             </header>
             <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8">

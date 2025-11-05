@@ -20,7 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Loader2, Languages } from 'lucide-react';
-import type { Message } from '@/lib/types';
+import type { Message } from '@/lib/';
 import { translateMessage } from '@/ai/flows/translate-message-flow';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';

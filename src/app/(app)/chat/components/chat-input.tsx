@@ -11,7 +11,8 @@ import { MoreVertical, Paperclip, Phone, Send, Smile, Video, Mic, Check, CheckCh
 import { Button } from '@/components/ui/button';
 import TextareaAutosize from 'react-textarea-autosize';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import type { Chat, User, Message, AttachmentMetadata, DmRequest } from '@/lib/types';
+import type { Chat, Message, AttachmentMetadata } from '@/lib/chat';
+import type { User, DmRequest } from '@/lib/auth';
 import { cn, createClient } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';

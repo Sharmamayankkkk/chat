@@ -32,10 +32,10 @@ import EmojiPicker, { EmojiClickData, SkinTones } from 'emoji-picker-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { VoiceNotePlayer } from './voice-note-player';
 import { format, isSameDay, isToday, isYesterday } from 'date-fns';
-import { RequestDmDialog } from './request-dm-dialog';
+import { RequestDmDialog } from '../../profile/components/request-dm-dialog';
 import { Badge } from '@/components/ui/badge';
-import { ForwardMessageDialog } from './forward-message-dialog';
-import { ReportDialog } from './report-dialog';
+import { ForwardMessageDialog } from '../../components/forward-message-dialog';
+import { ReportDialog } from '../../profile/components/report-dialog';
 import { PinnedMessagesDialog } from './pinned-messages-dialog';
 import { LinkPreview } from './link-preview';
 import { ImageViewerDialog } from './image-viewer';
@@ -247,36 +247,8 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     [chat, loggedInUser.id, isGroup]);
     
     const pinnedMessages = useMemo(() => (chat.messages || []).filter(m => m.is_pinned), [chat.messages]);
-
-    const isDmRestricted = useMemo(() => {
-        if (chat.type !== 'dm' || !chatPartner || !dmRequests || loggedInUser.is_admin || chatPartner.is_admin) {
-            return false;
-        }
-
-        if (!(loggedInUser.gender && chatPartner.gender && loggedInUser.gender !== chatPartner.gender)) {
-            return false;
-        }
-
-        const hasPermission = dmRequests.some(req =>
-            req.status === 'approved' &&
-            ((req.from_user_id === loggedInUser.id && req.to_user_id === chatPartner.id) ||
-             (req.from_user_id === chatPartner.id && req.to_user_id === loggedInUser.id))
-        );
-        
-        const isChatWithGurudev = chatPartner?.role === 'gurudev';
-        if (isChatWithGurudev && !loggedInUser.is_admin) {
-            if ((chat.messages || []).length > 0) return false;
-            return !hasPermission;
-        }
-
-        if (hasPermission) return false;
-
-        if((chat.messages || []).length === 0 && !hasPermission) return true;
-
-        return !hasPermission;
-        
-    }, [chat.type, loggedInUser, chatPartner, dmRequests, chat.messages]);
     
+    const isDmRestricted = false;
     const existingRequest = useMemo(() => {
         if (!chatPartner || !dmRequests) return null;
         return dmRequests.find(req =>
@@ -907,7 +879,7 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
     }
     
     const bubbleStyle = isMyMessage ? outgoingBubbleStyle : incomingBubbleStyle;
-    const senderName = isGroup && sender.role === 'gurudev' ? chat.name : sender.name;
+    const senderName = sender.name;
     const senderAvatar = sender.avatar_url;
     const senderFallback = (senderName || 'U').charAt(0);
 
@@ -957,9 +929,6 @@ export function Chat({ chat, loggedInUser, setMessages, highlightMessageId, isLo
                               <span style={{ color: themeSettings.usernameColor }}>
                                   {senderName}
                               </span>
-                              {sender.role === 'gurudev' && (
-                                  <Badge variant="destructive" className="text-xs px-1.5 py-0 leading-none">Gurudev</Badge>
-                              )}
                           </div>
                       )}
                       {message.replied_to_message && <ReplyPreview repliedTo={message.replied_to_message} />}

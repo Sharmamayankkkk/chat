@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CheckCheck } from 'lucide-react';
-import type { Message, Chat, Participant, User } from '@/lib/types';
+import type { Message, Chat, Participant, User } from '@/lib/';
 
 interface MessageInfoDialogProps {
   message: Message;

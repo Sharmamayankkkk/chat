@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
 import { useAppContext } from "@/providers/app-provider"
-import type { Chat, User, Participant } from '@/lib/types'
+import type { Chat, User, Participant } from '@/lib/'
 import { UserPlus, UserX, Loader2, Upload, RefreshCcw, Copy } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -77,8 +77,8 @@ export function EditGroupDialog({ open, onOpenChange, group }: EditGroupDialogPr
     if (!participants.some(p => p.user_id === user.id)) {
       setParticipants(prev => [...prev, {
         user_id: user.id,
+        is_admin: false,
         chat_id: group.id,
-        is_admin: user.role === 'gurudev', // Gurudev is admin by default
         profiles: user
       }]);
     }

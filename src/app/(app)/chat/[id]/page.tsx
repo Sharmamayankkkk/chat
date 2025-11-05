@@ -2,7 +2,7 @@
 "use client"
 
 import { notFound, useParams, useSearchParams } from "next/navigation"
-import { Chat as ChatUI } from "../../components/chat"
+import { Chat as ChatUI } from "../components/chat"
 import { useAppContext } from "@/providers/app-provider"
 import { Icons } from "@/components/icons"
 import { useEffect, useRef, useMemo, useCallback, useState } from "react"

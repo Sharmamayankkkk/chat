@@ -3,7 +3,7 @@
 import React from 'react';
 import Image from 'next/image';
 import { Card, CardContent } from '@/components/ui/card';
-import type { AttachmentMetadata } from '@/lib/types';
+import type { AttachmentMetadata } from '@/lib/';
 import { Globe } from 'lucide-react';
 
 interface LinkPreviewProps {

@@ -71,18 +71,12 @@ export function UserMenu() {
                 </Link>
                 <Link href="/starred">
                   <DropdownMenuItem>
-                    <Star className="mr-2 h-4 w-4" />
                     <span>Starred Messages</span>
                   </DropdownMenuItem>
                 </Link>
                 <Link href="/settings">
                   <DropdownMenuItem>Settings</DropdownMenuItem>
                 </Link>
-                {loggedInUser.is_admin && (
-                  <Link href="/admin">
-                    <DropdownMenuItem>Admin Panel</DropdownMenuItem>
-                  </Link>
-                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>Logout</DropdownMenuItem>
                 <DropdownMenuSeparator />
