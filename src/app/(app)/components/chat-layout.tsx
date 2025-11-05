@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
 import { Icons } from "@/components/icons"
-import type { Chat } from "@/lib/types"
+import type { Chat } from "@/lib/"
 import { UserMenu } from "./user-menu"
 import { ChatList } from "./chat-list"
 import { MainNav } from "./main-nav"

@@ -10,7 +10,7 @@ import { Star, MessageSquare, ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import React from 'react';
-import type { Message, Chat } from '@/lib/types';
+import type { Message, Chat } from '@/lib/';
 import { createClient } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SidebarTrigger } from '@/components/ui/sidebar';

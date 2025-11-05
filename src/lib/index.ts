@@ -2,7 +2,7 @@
 // This maintains backward compatibility with existing imports
 
 // Auth types
-export type { User, DmRequest, Report } from './auth';
+export type { User } from './auth'; // DmRequest and Report are removed
 
 // Chat types
 export type {
@@ -23,5 +23,7 @@ export type {
 // App types
 export type {
   ThemeSettings,
-  AppContextType
+  AppContextType,
+  Relationship,
+  RelationshipStatus
 } from './app';

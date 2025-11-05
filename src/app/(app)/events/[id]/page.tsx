@@ -12,7 +12,7 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { notFound } from 'next/navigation';
-import type { Event, RSVPStatus } from '@/lib/types';
+import type { Event, RSVPStatus } from '@/lib/';
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { CreateEventDialog } from '../components/create-event-dialog';

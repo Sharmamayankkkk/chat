@@ -1,4 +1,3 @@
-
 'use client'
 
 import * as React from 'react'
@@ -15,7 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useToast } from "@/hooks/use-toast"
 import { useAppContext } from "@/providers/app-provider"
-import type { User, Chat } from '@/lib/types'
+import type { User, Chat } from '@/lib/'
 import { createClient } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Search } from 'lucide-react'
@@ -28,36 +27,28 @@ interface NewChatDialogProps {
 export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const { loggedInUser, chats, addChat } = useAppContext();
-  const [allUsers, setAllUsers] = React.useState<User[]>([]);
+  
+  // --- UPDATED: Get allUsers and relationships from context ---
+  const { loggedInUser, chats, addChat, allUsers, relationships, isReady } = useAppContext();
+  // --- END UPDATE ---
+
   const [isLoading, setIsLoading] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
   const supabase = createClient();
 
-  React.useEffect(() => {
-    if (open && loggedInUser) {
-      const fetchUsers = async () => {
-        setIsLoading(true);
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .neq('id', loggedInUser.id); // Exclude self
-
-        if (error) {
-          toast({ variant: 'destructive', title: "Error fetching users", description: error.message });
-          setAllUsers([]);
-        } else {
-          setAllUsers(data as User[]);
-        }
-        setIsLoading(false);
-      };
-      fetchUsers();
-    } else {
-        setSearchQuery('');
-        setAllUsers([]);
-    }
-  }, [open, supabase, toast, loggedInUser]);
+  // --- REMOVED: useEffect for fetching all users ---
+  // We no longer need this, as allUsers is now provided by AppProvider
+  // --- END REMOVAL ---
   
+  React.useEffect(() => {
+    // Clear search when dialog is closed
+    if (!open) {
+      setSearchQuery('');
+    }
+  }, [open]);
+
+  // This function is still valid. It will only be called for users
+  // we are allowed to message (thanks to the logic in `filteredUsers`).
   const handleUserClick = async (targetUser: User) => {
     if (!loggedInUser) return;
     
@@ -74,15 +65,15 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
     if (existingChat) {
         router.push(`/chat/${existingChat.id}`);
         onOpenChange(false);
+        setIsLoading(false);
         return;
     }
 
     // 2. If not, create a new DM chat
     try {
-      // Create the chat record. The `created_by` field is set automatically by the database.
       const { data: chatData, error: chatError } = await supabase
         .from('chats')
-        .insert({ type: 'dm' })
+        .insert({ type: 'dm', created_by: loggedInUser.id }) // Set the creator
         .select()
         .single();
       
@@ -119,18 +110,42 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
         toast({
           variant: 'destructive',
           title: 'Error starting chat',
-          description: `Database error: ${error.message}. Please ensure RLS policies are correct or disabled for testing.`
+          description: `Database error: ${error.message}.`
         });
     } finally {
         setIsLoading(false);
     }
   }
 
+  // --- UPDATED: filteredUsers logic ---
+  // This is the most important change.
   const filteredUsers = React.useMemo(() => {
-    if (!loggedInUser) return [];
+    if (!loggedInUser || !allUsers || !relationships) return [];
 
-    const usersToShow = allUsers;
+    // 1. Get all users *except* the logged-in user
+    const otherUsers = allUsers.filter(u => u.id !== loggedInUser.id);
 
+    // 2. Find users with a mutual, approved follow
+    const usersToShow = otherUsers.filter(user => {
+      // Check: Do I follow them?
+      const iFollowThem = relationships.some(r => 
+        r.user_one_id === loggedInUser.id && 
+        r.user_two_id === user.id && 
+        r.status === 'approved'
+      );
+      
+      // Check: Do they follow me?
+      const theyFollowMe = relationships.some(r => 
+        r.user_one_id === user.id && 
+        r.user_two_id === loggedInUser.id && 
+        r.status === 'approved'
+      );
+      
+      // You can only message if both are true
+      return iFollowThem && theyFollowMe;
+    });
+
+    // 3. Apply search query to the pre-filtered list
     if (!searchQuery) return usersToShow;
 
     const lowercasedQuery = searchQuery.toLowerCase();
@@ -138,26 +153,32 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
       user.name.toLowerCase().includes(lowercasedQuery) ||
       (user.username && user.username.toLowerCase().includes(lowercasedQuery))
     );
-  }, [allUsers, searchQuery, loggedInUser]);
+  }, [allUsers, relationships, loggedInUser, searchQuery]);
+  // --- END UPDATE ---
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>New Chat</DialogTitle>
-          <DialogDescription>Select a user to start a conversation.</DialogDescription>
+          <DialogTitle>New Message</DialogTitle>
+          {/* UPDATED Description */}
+          <DialogDescription>
+            Select a mutual follower to start a conversation.
+          </DialogDescription>
         </DialogHeader>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search users..."
+            placeholder="Search mutual followers..."
             className="pl-8"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
         <ScrollArea className="h-72 w-full mt-4">
-          {isLoading && !allUsers.length ? (
+          {/* Use isReady from context to know when users are loaded */}
+          {!isReady ? (
             <div className="space-y-3 pr-4">
               {[...Array(5)].map((_, i) => (
                 <div key={i} className="flex items-center space-x-3">
@@ -190,8 +211,9 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
               ))}
             </div>
           ) : (
+            // UPDATED empty state message
             <p className="text-sm text-center text-muted-foreground py-10">
-              No users found.
+              No mutual followers found.
             </p>
           )}
         </ScrollArea>

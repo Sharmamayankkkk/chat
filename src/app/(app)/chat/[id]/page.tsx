@@ -6,7 +6,7 @@ import { Chat as ChatUI } from "../components/chat"
 import { useAppContext } from "@/providers/app-provider"
 import { Icons } from "@/components/icons"
 import { useEffect, useRef, useMemo, useCallback, useState } from "react"
-import type { Message, Chat } from "@/lib/types"
+import type { Message, Chat } from "@/lib/"
 import { createClient } from "@/lib/utils"
 
 function ChatPageLoading() {

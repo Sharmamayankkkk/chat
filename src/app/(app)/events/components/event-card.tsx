@@ -8,7 +8,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Button } from "@/components/ui/button";
 import { Badge } from '@/components/ui/badge';
 import { useAppContext } from '@/providers/app-provider';
-import type { Event, RSVPStatus } from '@/lib/types';
+import type { Event, RSVPStatus } from '@/lib/';
 import { format } from 'date-fns';
 import { Calendar, Clock, Users, Check, Star, X, Link as LinkIcon, Share2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';

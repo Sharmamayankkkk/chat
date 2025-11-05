@@ -10,7 +10,7 @@ import { EventCard } from './components/event-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { createClient } from '@/lib/utils';
-import type { Event } from '@/lib/types';
+import type { Event } from '@/lib/';
 import { useToast } from '@/hooks/use-toast';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 

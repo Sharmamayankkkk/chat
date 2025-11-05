@@ -1,7 +1,18 @@
 // Application-level types (context, settings, etc.)
 
-import type { User, DmRequest } from './auth';
+import type { User } from './auth';
 import type { Chat, Message } from './chat';
+
+// NEW: Define the Relationship type to match the database
+export type RelationshipStatus = 'pending' | 'approved' | 'blocked';
+
+export type Relationship = {
+  id: number;
+  user_one_id: string; // The user initiating the action
+  user_two_id: string; // The user being acted upon
+  status: RelationshipStatus;
+  created_at: string;
+};
 
 export type ThemeSettings = {
   outgoingBubbleColor: string;
@@ -11,21 +22,28 @@ export type ThemeSettings = {
   wallpaperBrightness: number;
 };
 
+// UPDATED: This is the new "contract" for our AppContext
 export interface AppContextType {
   loggedInUser: User | null;
   allUsers: User[];
   chats: Chat[];
-  dmRequests: DmRequest[];
-  blockedUsers: string[];
-  sendDmRequest: (toUserId: string, reason: string) => Promise<void>;
+  relationships: Relationship[]; // REPLACED dmRequests and blockedUsers
+  
   addChat: (newChat: Chat) => void;
   updateUser: (updates: Partial<User>) => Promise<void>;
   leaveGroup: (chatId: number) => Promise<void>;
   deleteGroup: (chatId: number) => Promise<void>;
-  blockUser: (userId: string) => Promise<void>;
-  unblockUser: (userId: string) => Promise<void>;
-  reportUser: (reportedUserId: string, reason: string, messageId?: number) => Promise<void>;
   forwardMessage: (message: Message, chatIds: number[]) => Promise<void>;
+
+  // NEW functions
+  followUser: (targetId: string) => Promise<void>;
+  approveFollow: (requestorId: string) => Promise<void>;
+  rejectFollow: (requestorId: string) => Promise<void>;
+  unfollowUser: (targetId: string) => Promise<void>;
+  removeFollower: (targetId: string) => Promise<void>;
+  blockUser: (targetId: string) => Promise<void>;
+  unblockUser: (targetId: string) => Promise<void>;
+
   themeSettings: ThemeSettings;
   setThemeSettings: (newSettings: Partial<ThemeSettings>) => void;
   isReady: boolean;

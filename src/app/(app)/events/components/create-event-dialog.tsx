@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { useAppContext } from "@/providers/app-provider"
-import type { Event } from '@/lib/types'
+import type { Event } from '@/lib/'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn, createClient } from '@/lib/utils'
 import { format } from 'date-fns'

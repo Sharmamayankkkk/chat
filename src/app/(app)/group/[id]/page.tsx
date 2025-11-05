@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import React from 'react';
 import { EditGroupDialog } from './components/edit-group-dialog';
-import type { Chat } from '@/lib/types';
+import type { Chat } from '@/lib/';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 

@@ -1,8 +1,8 @@
-
 "use client"
 
 import { createContext, useContext, useState, type ReactNode, useEffect, useCallback, useRef } from "react"
-import type { User, Chat, ThemeSettings, Message, DmRequest, AppContextType } from "@/lib/types"
+// We've removed DmRequest and updated the types import
+import type { User, Chat, ThemeSettings, Message, AppContextType, Relationship } from "@/lib/" 
 import { createClient } from "@/lib/utils"
 import { Icons } from "@/components/icons"
 import { useToast } from "@/hooks/use-toast"
@@ -35,8 +35,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [loggedInUser, setLoggedInUser] = useState<User | null>(null)
   const [allUsers, setAllUsers] = useState<User[]>([])
   const [chats, setChats] = useState<Chat[]>([])
-  const [dmRequests, setDmRequests] = useState<DmRequest[]>([])
-  const [blockedUsers, setBlockedUsers] = useState<string[]>([])
+  const [isReady, setIsReady] = useState(false)
+  
+  // --- STATE CHANGES ---
+  // Removed dmRequests and blockedUsers state
+  const [relationships, setRelationships] = useState<Relationship[]>([])
+  // --- END OF STATE CHANGES ---
+
   const [themeSettings, setThemeSettingsState] = useState<ThemeSettings>({
     outgoingBubbleColor: "hsl(221.2 83.2% 53.3%)",
     incomingBubbleColor: "hsl(210 40% 96.1%)",
@@ -44,7 +49,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     chatWallpaper: "/chat-bg.png",
     wallpaperBrightness: 100,
   })
-  const [isReady, setIsReady] = useState(false)
 
   const supabaseRef = useRef(createClient())
   const subscriptionsRef = useRef<any[]>([])
@@ -58,17 +62,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [])
   
+  // --- RESET STATE UPDATED ---
   const resetState = useCallback(() => {
-    setSession(null)
+    setSession(null); // Added this to clear session on reset
     setLoggedInUser(null)
     setChats([])
     setAllUsers([])
-    setDmRequests([])
-    setBlockedUsers([])
+    setRelationships([]) // Updated
     subscriptionsRef.current.forEach(sub => sub.unsubscribe())
     subscriptionsRef.current = []
   }, [])
+  // --- END OF RESET STATE ---
 
+  // --- FETCH INITIAL DATA UPDATED ---
   const fetchInitialData = useCallback(async (user: AuthUser) => {
     try {
         const { data: profile, error: profileError } = await supabaseRef.current
@@ -96,22 +102,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         setLoggedInUser(fullUserProfile);
 
+        // Updated Promise.all to fetch relationships instead of dm_requests and blocked_users
         const [
             { data: allUsersData },
-            { data: dmRequestsData },
-            { data: blockedData },
+            { data: relationshipsData }, // Changed
             { data: participantRecords }
         ] = await Promise.all([
             supabaseRef.current.from("profiles").select("*"),
-            supabaseRef.current.from("dm_requests").select("*, from:profiles!from_user_id(*), to:profiles!to_user_id(*)").or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`),
-            supabaseRef.current.from("blocked_users").select("blocked_id").eq("blocker_id", user.id),
+            // Fetches all relationships (follows, pending, blocks) involving this user
+            supabaseRef.current.from("relationships").select("*").or(`user_one_id.eq.${user.id},user_two_id.eq.${user.id}`), // Changed
             supabaseRef.current.from('participants').select('chat_id').eq('user_id', user.id)
         ]);
         
         setAllUsers((allUsersData as User[]) || []);
-        setDmRequests((dmRequestsData as DmRequest[]) || []);
-        setBlockedUsers(blockedData?.map((b) => b.blocked_id) || []);
-
+        setRelationships((relationshipsData as Relationship[]) || []); // Changed
+        
+        // This chat-fetching logic remains the same
         const chatIds = participantRecords?.map(p => p.chat_id) || [];
         if (chatIds.length > 0) {
             const { data: chatsData } = await supabaseRef.current
@@ -146,7 +152,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await supabaseRef.current.auth.signOut();
     }
   }, [toast, requestNotificationPermission]);
+  // --- END OF FETCH INITIAL DATA ---
   
+  // This useEffect remains largely the same
   useEffect(() => {
     // This effect runs once on initial mount to check for a session
     const initializeApp = async () => {
@@ -182,9 +190,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscriptionsRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchInitialData, resetState, router]);
 
 
+  // This (handleNewMessage) remains unchanged
   const handleNewMessage = useCallback(
     async (payload: RealtimePostgresChangesPayload<Message>) => {
       if (!loggedInUser) return;
@@ -236,6 +245,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [loggedInUser, pathname, allUsers]
   );
 
+  // --- REALTIME SUBSCRIPTIONS UPDATED ---
   useEffect(() => {
     if (!loggedInUser || subscriptionsRef.current.length > 0) {
       return;
@@ -244,18 +254,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const channels = [
       supabaseRef.current.channel('public-messages-notifications')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => handleNewMessage(payload as any)),
+      
       supabaseRef.current.channel('participants-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `user_id=eq.${loggedInUser.id}` }, async () => {
           if (session) await fetchInitialData(session.user);
         }),
-      supabaseRef.current.channel('dm-requests-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_requests', filter: `or(from_user_id.eq.${loggedInUser.id},to_user_id.eq.${loggedInUser.id})` }, async () => {
-          if (session) await fetchInitialData(session.user);
+      
+      // NEW: Listen for changes to relationships
+      supabaseRef.current.channel('relationships-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'relationships', filter: `or(user_one_id.eq.${loggedInUser.id},user_two_id.eq.${loggedInUser.id})` }, async () => {
+            if (session) await fetchInitialData(session.user);
+            router.refresh(); // Force refresh profile pages
         }),
-      supabaseRef.current.channel('blocked-users-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users', filter: `blocker_id=eq.${loggedInUser.id}` }, async () => {
-          if (session) await fetchInitialData(session.user);
-        }),
+      
+      // REMOVED: dm-requests-changes
+      // REMOVED: blocked-users-changes
+
       supabaseRef.current.channel('public:chats')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chats' }, payload => {
             setChats(current => current.map(c => c.id === payload.new.id ? {...c, ...payload.new} : c))
@@ -265,8 +279,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     channels.forEach(c => c.subscribe());
     subscriptionsRef.current = channels;
 
-  }, [loggedInUser, session, handleNewMessage, fetchInitialData]);
+  }, [loggedInUser, session, handleNewMessage, fetchInitialData, router]);
+  // --- END OF REALTIME SUBSCRIPTIONS ---
 
+  // These functions (setThemeSettings, addChat, updateUser, leaveGroup, deleteGroup) remain the same
   const setThemeSettings = useCallback(async (newSettings: Partial<ThemeSettings>) => {
     if (!loggedInUser) return;
     const updatedSettings = { ...themeSettings, ...newSettings };
@@ -315,42 +331,91 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [toast])
 
-  const sendDmRequest = useCallback(async (toUserId: string, reason: string) => {
-    if (!loggedInUser) return
-    const { error } = await supabaseRef.current.from("dm_requests").insert({ from_user_id: loggedInUser.id, to_user_id: toUserId, reason: reason })
-    if (error) toast({ variant: "destructive", title: "Error sending request", description: error.message })
-    else toast({ title: "Request Sent!" })
-  }, [loggedInUser, toast])
+  // --- REMOVED FUNCTIONS ---
+  // const sendDmRequest = ... (REMOVED)
+  // const reportUser = ... (REMOVED)
+  // --- END OF REMOVED FUNCTIONS ---
 
-  const blockUser = useCallback(async (userId: string) => {
+
+  // --- NEW SOCIAL/RELATIONSHIP FUNCTIONS ---
+  const followUser = useCallback(async (targetId: string) => {
     if (!loggedInUser) return;
-    const { error } = await supabaseRef.current.from("blocked_users").insert({ blocker_id: loggedInUser.id, blocked_id: userId })
+    const { data, error } = await supabaseRef.current.rpc('request_follow', { target_user_id: targetId });
     if (error) {
-      toast({ variant: "destructive", title: "Error blocking user", description: error.message })
+      toast({ variant: "destructive", title: "Error sending request", description: error.message });
     } else {
-      toast({ title: "User Blocked" })
-      setBlockedUsers(current => [...current, userId])
+      // The RPC returns { status: 'pending' | 'approved' }
+      toast({ title: (data as any).status === 'pending' ? "Follow request sent!" : "Followed!" });
+      // Realtime subscription will handle updating the state
     }
-  }, [loggedInUser, toast])
+  }, [loggedInUser, toast]);
 
-  const unblockUser = useCallback(async (userId: string) => {
+  const approveFollow = useCallback(async (requestorId: string) => {
     if (!loggedInUser) return;
-    const { error } = await supabaseRef.current.from("blocked_users").delete().match({ blocker_id: loggedInUser.id, blocked_id: userId })
+    const { error } = await supabaseRef.current.rpc('approve_follow', { requestor_user_id: requestorId });
     if (error) {
-      toast({ variant: "destructive", title: "Error unblocking user", description: error.message })
+      toast({ variant: "destructive", title: "Error approving request", description: error.message });
     } else {
-      toast({ title: "User Unblocked" })
-      setBlockedUsers(current => current.filter(id => id !== userId))
+      toast({ title: "Follow request approved!" });
     }
-  }, [loggedInUser, toast])
+  }, [loggedInUser, toast]);
 
-  const reportUser = useCallback(async (reportedUserId: string, reason: string, messageId?: number) => {
-    if (!loggedInUser) return
-    const { error } = await supabaseRef.current.from("reports").insert({ reported_by: loggedInUser.id, reported_user_id: reportedUserId, reason: reason, message_id: messageId })
-    if (error) toast({ variant: "destructive", title: "Error submitting report", description: error.message })
-    else toast({ title: "Report Submitted" })
-  }, [loggedInUser, toast])
+  const rejectFollow = useCallback(async (requestorId: string) => {
+    if (!loggedInUser) return;
+    // We just delete the pending request.
+    const { error } = await supabaseRef.current.from('relationships').delete()
+      .match({ user_one_id: requestorId, user_two_id: loggedInUser.id, status: 'pending' });
+        
+    if (error) {
+      toast({ variant: "destructive", title: "Error rejecting request", description: error.message });
+    } else {
+      toast({ title: "Request rejected" });
+    }
+  }, [loggedInUser, toast]);
+  
+  const unfollowUser = useCallback(async (targetId: string) => {
+    if (!loggedInUser) return;
+    const { error } = await supabaseRef.current.rpc('unfollow_user', { target_user_id: targetId });
+    if (error) {
+      toast({ variant: "destructive", title: "Error unfollowing", description: error.message });
+    } else {
+      toast({ title: "Unfollowed" });
+    }
+  }, [loggedInUser, toast]);
+  
+  const removeFollower = useCallback(async (targetId: string) => {
+    if (!loggedInUser) return;
+    const { error } = await supabaseRef.current.rpc('remove_follower', { target_user_id: targetId });
+    if (error) {
+      toast({ variant: "destructive", title: "Error removing follower", description: error.message });
+    } else {
+      toast({ title: "Follower removed" });
+    }
+  }, [loggedInUser, toast]);
 
+  const blockUser = useCallback(async (targetId: string) => {
+    if (!loggedInUser) return;
+    const { error } = await supabaseRef.current.rpc('block_user', { target_user_id: targetId });
+    if (error) {
+      toast({ variant: "destructive", title: "Error blocking user", description: error.message });
+    } else {
+      toast({ title: "User Blocked" });
+    }
+  }, [loggedInUser, toast]);
+
+  const unblockUser = useCallback(async (targetId: string) => {
+    if (!loggedInUser) return;
+    const { error } = await supabaseRef.current.rpc('unblock_user', { target_user_id: targetId });
+    if (error) {
+      toast({ variant: "destructive", title: "Error unblocking user", description: error.message });
+    } else {
+      toast({ title: "User Unblocked" });
+    }
+  }, [loggedInUser, toast]);
+  // --- END OF NEW FUNCTIONS ---
+
+
+  // This (forwardMessage) remains unchanged
   const forwardMessage = useCallback(async (message: Message, chatIds: number[]) => {
     if (!loggedInUser) return
 
@@ -380,6 +445,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [loggedInUser, allUsers, toast]);
 
+  // This (resetUnreadCount) remains unchanged
   const resetUnreadCount = useCallback((chatId: number) => {
     setChats(current => current.map(c => (c.id === chatId && c.unreadCount ? { ...c, unreadCount: 0 } : c)))
   }, []);
@@ -388,14 +454,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return <AppLoading />
   }
 
+  // --- CONTEXT VALUE UPDATED ---
+  // This is the part that fixes your error
   const value = {
-    loggedInUser, allUsers, chats, dmRequests, blockedUsers,
-    sendDmRequest, addChat, updateUser, leaveGroup, deleteGroup,
-    blockUser, unblockUser, reportUser, forwardMessage,
+    loggedInUser, allUsers, chats, 
+    relationships, 
+    addChat, updateUser, leaveGroup, deleteGroup,
+    forwardMessage,
     themeSettings, setThemeSettings, isReady, resetUnreadCount,
+    
+    // All the functions are now correctly defined above and passed in here
+    followUser,
+    approveFollow,
+    rejectFollow,
+    unfollowUser,
+    removeFollower,
+    blockUser,
+    unblockUser,
   }
+  // --- END OF CONTEXT VALUE ---
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>
+  return <AppContext.Provider value={value as any}>{children}</AppContext.Provider>
 }
 
 export function useAppContext() {

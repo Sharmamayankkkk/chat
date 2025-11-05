@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Send, Loader2 } from 'lucide-react';
 import { useAppContext } from '@/providers/app-provider';
-import type { Event, Chat } from '@/lib/types';
+import type { Event, Chat } from '@/lib/';
 import { useToast } from '@/hooks/use-toast';
 import { createClient } from '@/lib/utils';
 

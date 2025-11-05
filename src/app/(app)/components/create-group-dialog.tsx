@@ -31,7 +31,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useToast } from "@/hooks/use-toast"
 import { useAppContext } from "@/providers/app-provider"
-import type { User } from '@/lib/types'
+import type { User } from '@/lib/'
 import { createClient } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 

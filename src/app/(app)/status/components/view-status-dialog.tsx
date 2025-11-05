@@ -10,7 +10,7 @@ import Image from 'next/image';
 import { createClient } from '@/lib/utils';
 import { useAppContext } from '@/providers/app-provider';
 import { formatDistanceToNow } from 'date-fns';
-import type { User } from '@/lib/types';
+import type { User } from '@/lib/';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
 

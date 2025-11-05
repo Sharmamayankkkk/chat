@@ -19,7 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { createClient } from '@/lib/utils';
-import type { User } from '@/lib/types';
+import type { User } from '@/lib/';
 
 export default function CompleteProfilePage() {
   const router = useRouter();

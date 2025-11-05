@@ -1,4 +1,3 @@
-
 'use client';
 
 import Link from 'next/link';
@@ -10,11 +9,12 @@ import { useAppContext } from "@/providers/app-provider";
 import { Badge } from '@/components/ui/badge';
 import { MessageSquare, UserX, Users, ArrowLeft, ShieldCheck, UserCheck, ShieldAlert } from 'lucide-react';
 import { createClient } from '@/lib/utils';
-import type { User, Chat } from '@/lib/types';
-import { useState, useEffect } from 'react';
+import type { User, Chat } from '@/lib';
+import { useState, useEffect, useMemo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ReportDialog } from '../components/report-dialog';
+// import { ReportDialog } from '../components/report-dialog'; // We'll re-add this later
 import { SidebarTrigger } from '@/components/ui/sidebar';
+import { useToast } from '@/hooks/use-toast';
 
 function ProfilePageLoader() {
   return (
@@ -50,7 +50,25 @@ function ProfilePageLoader() {
 export default function UserProfilePage() {
   const params = useParams<{ username: string }>();
   const router = useRouter();
-  const { loggedInUser, isReady, blockUser, unblockUser, blockedUsers, chats, addChat } = useAppContext();
+  const { toast } = useToast();
+  
+  // --- UPDATED: Destructuring from AppContext ---
+  // We are now using the new state and functions from the provider
+  const {
+    loggedInUser,
+    isReady,
+    chats,
+    addChat,
+    relationships,      // NEW: Replaces dmRequests and blockedUsers
+    followUser,         // NEW: Replaces sendFollowRequest
+    approveFollow,      // NEW: Replaces approveFollowRequest
+    rejectFollow,       // NEW: For rejecting a request
+    unfollowUser,       // NEW: Replaces unfollowUser & cancelFollowRequest
+    blockUser,
+    unblockUser,
+  } = useAppContext();
+  // --- END OF UPDATES ---
+
   const [user, setUser] = useState<User | null>(null);
   const [mutualGroups, setMutualGroups] = useState<Chat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -75,11 +93,13 @@ export default function UserProfilePage() {
         .single();
       
       if (userError || !userData) {
+        setIsLoading(false); // Make sure loader stops
         notFound();
         return;
       }
       setUser(userData as User);
 
+      // This logic for mutual groups is fine
       const { data: participantData } = await supabase
         .from('participants')
         .select('chat_id')
@@ -106,10 +126,33 @@ export default function UserProfilePage() {
   }, [params.username, loggedInUser, isReady, router, supabase]);
 
 
-  if (isLoading || !user || !loggedInUser) {
-    return <ProfilePageLoader />;
-  }
+  // --- NEW: Logic to derive relationship statuses ---
+  // We use `useMemo` so this logic only re-runs when the data changes
+
+  // Check my relationship TO this user (am I following/blocking them?)
+  const myRelationship = useMemo(() => {
+    if (!relationships || !loggedInUser || !user) return null;
+    return relationships.find(r => r.user_one_id === loggedInUser.id && r.user_two_id === user.id);
+  }, [relationships, loggedInUser, user]);
+
+  // Check their relationship TO me (are they following me?)
+  const theirRelationship = useMemo(() => {
+    if (!relationships || !loggedInUser || !user) return null;
+    return relationships.find(r => r.user_one_id === user.id && r.user_two_id === loggedInUser.id);
+  }, [relationships, loggedInUser, user]);
+
+  // Derive simple boolean states from these relationships
+  const isBlockedByMe = myRelationship?.status === 'blocked';
+  const iAmBlocked = theirRelationship?.status === 'blocked';
+  const isFollowing = myRelationship?.status === 'approved';
+  const isPending = myRelationship?.status === 'pending'; // I sent a request
+  const hasPendingRequestFrom_them = theirRelationship?.status === 'pending'; // They sent me a request
+  const isMutualFollow = isFollowing && theirRelationship?.status === 'approved';
   
+  // --- END OF NEW LOGIC ---
+
+  
+  // This function is for the "Send Message" button
   const handleSendMessage = async () => {
     if (!loggedInUser || !user) return;
 
@@ -145,7 +188,6 @@ export default function UserProfilePage() {
       const { error: participantsError } = await supabase.from('participants').insert(participantData);
       if (participantsError) throw participantsError;
 
-      // Fetch the full new chat object to add to context and navigate
       const { data: newFullChat, error: newChatError } = await supabase
         .from('chats')
         .select(`*, participants:participants!chat_id(*, profiles!user_id(*))`)
@@ -158,20 +200,67 @@ export default function UserProfilePage() {
       router.push(`/chat/${newChatId}`);
     } catch (error: any) {
        console.error("Error creating new chat:", error);
-       alert(`Error creating chat: ${error.message}`);
+       toast({ variant: 'destructive', title: "Error starting chat", description: error.message });
     }
   };
+
+
+  if (isLoading || !user || !loggedInUser) {
+    return <ProfilePageLoader />;
+  }
+
+  // --- NEW: Button rendering logic ---
+  const renderFollowButton = () => {
+    // We don't show follow buttons if a block is in place
+    if (isBlockedByMe || iAmBlocked) {
+      return null;
+    }
+
+    // Case 1: They sent me a follow request
+    if (hasPendingRequestFrom_them) {
+      return (
+        <>
+          <Button onClick={() => approveFollow(user.id)}>Approve Request</Button>
+          <Button variant="outline" onClick={() => rejectFollow(user.id)}>Reject</Button>
+        </>
+      );
+    }
+
+    // Case 2: I am following them
+    if (isFollowing) {
+      return (
+        <Button variant="outline" onClick={() => unfollowUser(user.id)}>
+          Following
+        </Button>
+      );
+    }
+
+    // Case 3: I sent them a request
+    if (isPending) {
+      return (
+        <Button variant="outline" onClick={() => unfollowUser(user.id)}>
+          Requested
+        </Button>
+      );
+    }
+
+    // Default Case: No relationship, I can follow them
+    return (
+      <Button onClick={() => followUser(user.id)}>
+        Follow
+      </Button>
+    );
+  };
+  // --- END OF NEW BUTTON LOGIC ---
 
   const getRoleBadge = () => {
     return <Badge variant="outline">User</Badge>;
   };
 
-  const isBlocked = blockedUsers.includes(user.id);
-  const canSendMessage = !isBlocked;
-  
   return (
     <div className="flex h-full flex-col">
-      <ReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} userToReport={user} />
+      {/* <ReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} userToReport={user} /> */}
+      
       <header className="flex items-center gap-4 p-4 border-b bg-background sticky top-0 z-10">
         <SidebarTrigger className="md:hidden" />
         <h2 className="text-xl font-bold tracking-tight">{user.name}'s Profile</h2>
@@ -193,16 +282,39 @@ export default function UserProfilePage() {
                 <p className="text-muted-foreground">@{user.username}</p>
                 
                 <div className="mt-6 flex flex-col gap-2 w-full">
-                  <Button onClick={handleSendMessage} disabled={!canSendMessage}>
-                    <MessageSquare className="mr-2 h-4 w-4" /> Send Message
-                  </Button>
-                  <Button variant="outline" onClick={() => isBlocked ? unblockUser(user.id) : blockUser(user.id)}>
-                    {isBlocked ? <UserCheck className="mr-2 h-4 w-4" /> : <UserX className="mr-2 h-4 w-4" />}
-                    {isBlocked ? 'Unblock User' : 'Block User'}
-                  </Button>
-                   <Button variant="destructive" onClick={() => setIsReportDialogOpen(true)}>
+                  
+                  {/* --- UPDATED: Button Section --- */}
+                  
+                  {/* NEW: Show "Send Message" only on mutual follow */}
+                  {isMutualFollow && !isBlockedByMe && !iAmBlocked && (
+                    <Button onClick={handleSendMessage}>
+                      <MessageSquare className="mr-2 h-4 w-4" /> Send Message
+                    </Button>
+                  )}
+                  
+                  {/* Render the new dynamic follow/pending/approve button(s) */}
+                  {renderFollowButton()}
+
+                  {/* The Block button now uses the new `isBlockedByMe` state */}
+                  {!iAmBlocked && ( // Don't show block button if they blocked you
+                    <Button 
+                      variant="outline" 
+                      onClick={() => isBlockedByMe ? unblockUser(user.id) : blockUser(user.id)}
+                      // Don't allow blocking if you have a pending request from them
+                      disabled={hasPendingRequestFrom_them}
+                    >
+                      {isBlockedByMe ? <UserCheck className="mr-2 h-4 w-4" /> : <UserX className="mr-2 h-4 w-4" />}
+                      {isBlockedByMe ? 'Unblock User' : 'Block User'}
+                    </Button>
+                  )}
+                  
+                   {/* We'll re-enable this after updating ReportDialog */}
+                   {/* <Button variant="destructive" onClick={() => setIsReportDialogOpen(true)}>
                     <ShieldAlert className="mr-2 h-4 w-4" /> Report User
-                  </Button>
+                  </Button> */}
+
+                  {/* --- END OF UPDATED BUTTONS --- */}
+
                 </div>
               </CardContent>
             </Card>
