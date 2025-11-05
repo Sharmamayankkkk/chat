@@ -14,9 +14,9 @@ export default function AppHome() {
   useEffect(() => {
     // Only redirect after the app context is ready
     if (isReady) {
-      // If user is authenticated, redirect to chat
+      // If user is authenticated, redirect to explore
       if (loggedInUser) {
-        router.replace("/chat")
+        router.replace("/explore")
       } else {
         // If not authenticated, redirect to login
         router.replace("/login")

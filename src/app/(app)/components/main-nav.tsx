@@ -16,6 +16,12 @@ export function MainNav() {
 
   const menuItems = [
     {
+      href: '/explore',
+      label: 'Explore',
+      icon: Users,
+      isActive: pathname.startsWith('/explore'),
+    },
+    {
       href: '/chat',
       label: 'Chats',
       icon: MessageSquare,
@@ -32,12 +38,6 @@ export function MainNav() {
       label: 'Events',
       icon: Calendar,
       isActive: pathname.startsWith('/events'),
-    },
-    {
-      href: '/explore',
-      label: 'Explore KCS',
-      icon: Users,
-      isActive: pathname.startsWith('/explore'),
     },
   ]
 
